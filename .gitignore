@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+
+# Xcode (generated artifacts — project.yml + XcodeGen owns regen per CLAUDE.md §2)
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.xcuserdatad/
+DerivedData/
+build/
+*.dSYM/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Local secrets / env (per CLAUDE.md §7)
+.env
+.env.local
+*.secrets
+*.pem
+
+# Claude Code per-machine settings (per CLAUDE.md §8)
+.claude/settings.local.json
+
+# Codex helper artifacts (machine-local)
+.codex/
+
+# IDE / editor (machine-local)
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log

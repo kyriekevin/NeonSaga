@@ -27,11 +27,13 @@ public enum Strain {
         // 2. Clamp negative finite energy to zero (defensive; a negative kcal is not .noData).
         let e = max(raw, 0.0)
 
-        // 3. Saturating map: 21 × e / (e + K); K = 300 kcal.
+        // 3. Saturating map 21·e/(e+K), K=300, written as 21 - 21·K/(e+K): algebraically
+        //    identical but never forms 21·e — avoids the +inf overflow at huge finite e and
+        //    stays strictly < 21 for all finite e ≥ 0 (Codex diff-review).
         let k = 300.0
-        let computed = 21.0 * e / (e + k)
+        let computed = 21.0 - 21.0 * k / (e + k)
 
-        // 4. Defensive clamp to 0...21 and return.
+        // 4. Defensive clamp to 0...21 (the form above already keeps it in range).
         return .scored(value: clampStrain(computed, 0, 21))
     }
 }

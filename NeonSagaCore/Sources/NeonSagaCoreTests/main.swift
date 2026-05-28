@@ -117,6 +117,188 @@ group("health-aggregate") {
         "HEALTH LV uses floor(avg of LVs)=2, not floor(avg of values)=1")
 }
 
+// MARK: - Stage 1 · Slice 2 — HealthSnapshot + HealthDataSource (RED)
+//
+// Asserts the HEALTH data-bridge contract (S2 CONTRACT). Property-based
+// (bounds / finiteness / monotonicity / identity / delegation) so S3/S4 can
+// refine the Stage-1 baseline curves without breaking these tests.
+
+private struct FakeHealthDataSource: HealthDataSource {
+    let stored: HealthMetrics
+    func latestMetrics() async -> HealthMetrics { stored }
+}
+
+private let s2Epoch = Date(timeIntervalSince1970: 1_700_000_000)
+
+group("health-snapshot-derive") {
+    // RB #1 — partial init: each omitted field is nil (omitted ≠ 0).
+    let partial = HealthMetrics(hrvRMSSD: 45)
+    expect(partial.hrvRMSSD == 45, "supplied field is set")
+    expect(
+        partial.restingHeartRate == nil && partial.sleepEfficiency == nil
+            && partial.activeWorkoutEnergyKilocalories == nil,
+        "partial init leaves the other 3 fields nil")
+    let blank = HealthMetrics()
+    expect(
+        blank.restingHeartRate == nil && blank.hrvRMSSD == nil && blank.sleepEfficiency == nil
+            && blank.activeWorkoutEnergyKilocalories == nil, "no-arg init is all-nil")
+
+    // RB #2 — derive retains capturedAt + metrics verbatim.
+    let m = HealthMetrics(
+        restingHeartRate: 55, hrvRMSSD: 45, sleepEfficiency: 0.9,
+        activeWorkoutEnergyKilocalories: 300)
+    let snap = HealthSnapshot.derive(from: m, at: s2Epoch)
+    expect(snap.capturedAt == s2Epoch, "derive retains capturedAt")
+    expect(snap.metrics == m, "derive retains metrics verbatim")
+
+    // RB #3 — correct SubStat identity on each derived sub-stat.
+    expect(snap.hunger.substat == .hunger, "hunger sub-stat identity")
+    expect(snap.fatigue.substat == .fatigue, "fatigue sub-stat identity")
+    expect(snap.strength.substat == .strength, "strength sub-stat identity")
+
+    // RB #4 + #9 — all-nil metrics → finite, clamped 0...100 (NaN-guard).
+    let empty = HealthSnapshot.derive(from: HealthMetrics(), at: s2Epoch)
+    expect(
+        empty.fatigue.value.isFinite && (0...100).contains(empty.fatigue.value),
+        "all-nil FATIGUE finite in 0...100")
+    expect(
+        empty.strength.value.isFinite && (0...100).contains(empty.strength.value),
+        "all-nil STRENGTH finite in 0...100")
+    expect(
+        empty.hunger.value.isFinite && (0...100).contains(empty.hunger.value),
+        "all-nil HUNGER finite in 0...100")
+
+    // RB #14 (Gemini PR#3 G1) — missing inputs are EXCLUDED from the FATIGUE average,
+    // not counted as 0; all-missing → neutral 50 (a missing sample ≠ worst state).
+    expect(empty.fatigue.value == 50.0, "all-missing FATIGUE → neutral 50, not 0")
+    let twoPresent = HealthSnapshot.derive(
+        from: HealthMetrics(hrvRMSSD: 80, sleepEfficiency: 0.8), at: s2Epoch)
+    let threeZeroWk = HealthSnapshot.derive(
+        from: HealthMetrics(
+            hrvRMSSD: 80, sleepEfficiency: 0.8, activeWorkoutEnergyKilocalories: 0), at: s2Epoch)
+    expect(
+        twoPresent.fatigue.value > threeZeroWk.fatigue.value,
+        "absent workout excluded from FATIGUE avg, not counted as a 0 reading")
+
+    // RB #15 (Gemini PR#3 round 2) — a finite input whose transform OVERFLOWS to
+    // non-finite is treated as an invalid/missing signal (excluded), preserving the
+    // finite guarantee — never clamped to a bound nor propagated.
+    let overflow = HealthSnapshot.derive(
+        from: HealthMetrics(sleepEfficiency: .greatestFiniteMagnitude), at: s2Epoch)
+    expect(
+        overflow.fatigue.value == 50.0,
+        "transform-overflow sleep excluded → all-missing FATIGUE 50, not clamped to 100")
+    expect(overflow.fatigue.value.isFinite, "transform-overflow → FATIGUE still finite")
+
+    // RB #4 — pathological inputs (NaN / inf / huge / negative) → clamped finite.
+    let nan = HealthSnapshot.derive(
+        from: HealthMetrics(
+            restingHeartRate: .nan, hrvRMSSD: .nan, sleepEfficiency: .nan,
+            activeWorkoutEnergyKilocalories: .nan), at: s2Epoch)
+    expect(
+        nan.fatigue.value.isFinite && (0...100).contains(nan.fatigue.value),
+        "NaN inputs → FATIGUE finite in 0...100")
+    expect(
+        nan.strength.value.isFinite && (0...100).contains(nan.strength.value),
+        "NaN inputs → STRENGTH finite in 0...100")
+    let extreme = HealthSnapshot.derive(
+        from: HealthMetrics(
+            hrvRMSSD: .infinity, sleepEfficiency: 9,
+            activeWorkoutEnergyKilocalories: 1_000_000), at: s2Epoch)
+    expect((0...100).contains(extreme.fatigue.value), "huge/inf inputs → FATIGUE ≤ 100")
+    expect((0...100).contains(extreme.strength.value), "huge inputs → STRENGTH ≤ 100")
+    let negative = HealthSnapshot.derive(
+        from: HealthMetrics(
+            hrvRMSSD: -50, sleepEfficiency: -1, activeWorkoutEnergyKilocalories: -100),
+        at: s2Epoch)
+    expect((0...100).contains(negative.fatigue.value), "negative inputs → FATIGUE ≥ 0")
+    expect((0...100).contains(negative.strength.value), "negative inputs → STRENGTH ≥ 0")
+
+    // RB #5 — FATIGUE strictly increases with HRV (other inputs held nil).
+    let loHRV = HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 0), at: s2Epoch)
+    let hiHRV = HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 100), at: s2Epoch)
+    expect(loHRV.fatigue.value < hiHRV.fatigue.value, "FATIGUE strictly increases with HRV")
+
+    // RB #6 — FATIGUE strictly increases with sleep efficiency (others nil).
+    let loSleep = HealthSnapshot.derive(from: HealthMetrics(sleepEfficiency: 0), at: s2Epoch)
+    let hiSleep = HealthSnapshot.derive(from: HealthMetrics(sleepEfficiency: 1), at: s2Epoch)
+    expect(loSleep.fatigue.value < hiSleep.fatigue.value, "FATIGUE strictly increases with sleep")
+
+    // RB #7 — FATIGUE strictly increases with workout energy (others nil; workout → FATIGUE+X).
+    let loWk = HealthSnapshot.derive(
+        from: HealthMetrics(activeWorkoutEnergyKilocalories: 0), at: s2Epoch)
+    let hiWk = HealthSnapshot.derive(
+        from: HealthMetrics(activeWorkoutEnergyKilocalories: 600), at: s2Epoch)
+    expect(loWk.fatigue.value < hiWk.fatigue.value, "FATIGUE strictly increases with workout")
+
+    // RB #8 — STRENGTH strictly increases with workout energy.
+    expect(loWk.strength.value < hiWk.strength.value, "STRENGTH strictly increases with workout")
+
+    // RB #13 — STRENGTH depends ONLY on workout energy (PRODUCT §9): invariant to each
+    // non-workout input varied INDIVIDUALLY (single-var, so a canceling term can't hide).
+    let strBase = HealthSnapshot.derive(
+        from: HealthMetrics(
+            restingHeartRate: 60, hrvRMSSD: 20, sleepEfficiency: 0.5,
+            activeWorkoutEnergyKilocalories: 300), at: s2Epoch)
+    let strVaryHRV = HealthSnapshot.derive(
+        from: HealthMetrics(
+            restingHeartRate: 60, hrvRMSSD: 90, sleepEfficiency: 0.5,
+            activeWorkoutEnergyKilocalories: 300), at: s2Epoch)
+    let strVarySleep = HealthSnapshot.derive(
+        from: HealthMetrics(
+            restingHeartRate: 60, hrvRMSSD: 20, sleepEfficiency: 0.95,
+            activeWorkoutEnergyKilocalories: 300), at: s2Epoch)
+    let strVaryRHR = HealthSnapshot.derive(
+        from: HealthMetrics(
+            restingHeartRate: 40, hrvRMSSD: 20, sleepEfficiency: 0.5,
+            activeWorkoutEnergyKilocalories: 300), at: s2Epoch)
+    expect(strVaryHRV.strength.value == strBase.strength.value, "STRENGTH invariant to HRV alone")
+    expect(
+        strVarySleep.strength.value == strBase.strength.value, "STRENGTH invariant to sleep alone")
+    expect(strVaryRHR.strength.value == strBase.strength.value, "STRENGTH invariant to RHR alone")
+
+    // RB #10 — HUNGER neutral placeholder = 50.0, independent of metrics (incl. NaN/inf).
+    expect(snap.hunger.value == 50.0, "HUNGER == 50.0 placeholder")
+    expect(empty.hunger.value == 50.0, "HUNGER == 50.0 even with no metrics")
+    expect(nan.hunger.value == 50.0, "HUNGER == 50.0 under NaN metrics")
+    expect(extreme.hunger.value == 50.0, "HUNGER == 50.0 under inf/huge metrics")
+    expect(negative.hunger.value == 50.0, "HUNGER == 50.0 under negative metrics")
+
+    // RB #11 — HEALTH aggregate delegates to HealthStat over derived sub-stats.
+    expect(
+        snap.healthValue
+            == HealthStat.value(
+                hunger: snap.hunger.value, fatigue: snap.fatigue.value,
+                strength: snap.strength.value), "healthValue delegates to HealthStat.value")
+    expect(
+        snap.healthLevel
+            == HealthStat.level(
+                hunger: snap.hunger.value, fatigue: snap.fatigue.value,
+                strength: snap.strength.value), "healthLevel delegates to HealthStat.level")
+}
+
+// RB #12 — async seam: source → latestMetrics() → derive == direct derive.
+await group("health-snapshot-source") {
+    let m = HealthMetrics(
+        restingHeartRate: 55, hrvRMSSD: 45, sleepEfficiency: 0.9,
+        activeWorkoutEnergyKilocalories: 300)
+    let source = FakeHealthDataSource(stored: m)
+    let fetched = await source.latestMetrics()
+    let viaSource = HealthSnapshot.derive(from: fetched, at: s2Epoch)
+    let direct = HealthSnapshot.derive(from: m, at: s2Epoch)
+    expect(viaSource.capturedAt == direct.capturedAt, "source round-trip capturedAt matches")
+    expect(viaSource.metrics == direct.metrics, "source round-trip metrics match direct derive")
+    expect(
+        viaSource.fatigue.value == direct.fatigue.value,
+        "source round-trip FATIGUE matches direct derive")
+    expect(
+        viaSource.strength.value == direct.strength.value,
+        "source round-trip STRENGTH matches direct derive")
+    expect(
+        viaSource.hunger.value == direct.hunger.value,
+        "source round-trip HUNGER matches direct derive")
+}
+
 // MARK: - Summary
 //
 // Fail-fast above means reaching here implies every expectation passed.

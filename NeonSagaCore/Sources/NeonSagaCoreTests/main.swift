@@ -180,6 +180,16 @@ group("health-snapshot-derive") {
         twoPresent.fatigue.value > threeZeroWk.fatigue.value,
         "absent workout excluded from FATIGUE avg, not counted as a 0 reading")
 
+    // RB #15 (Gemini PR#3 round 2) — a finite input whose transform OVERFLOWS to
+    // non-finite is treated as an invalid/missing signal (excluded), preserving the
+    // finite guarantee — never clamped to a bound nor propagated.
+    let overflow = HealthSnapshot.derive(
+        from: HealthMetrics(sleepEfficiency: .greatestFiniteMagnitude), at: s2Epoch)
+    expect(
+        overflow.fatigue.value == 50.0,
+        "transform-overflow sleep excluded → all-missing FATIGUE 50, not clamped to 100")
+    expect(overflow.fatigue.value.isFinite, "transform-overflow → FATIGUE still finite")
+
     // RB #4 — pathological inputs (NaN / inf / huge / negative) → clamped finite.
     let nan = HealthSnapshot.derive(
         from: HealthMetrics(

@@ -551,6 +551,136 @@ group("recovery-score") {
     expect(noWk == nilWk, "Recovery ignores workout energy (0 vs nil) — no double-count")
 }
 
+// MARK: - Stage 1 · Slice 4 — Strain score (RED)
+//
+// Strain 0–21 (Whoop-convention) from a HealthSnapshot's raw active workout
+// energy — the one metric Recovery (S3) does NOT read. Property-based (NOT
+// pinned to the Stage-1 curve constant K) so the curve can be retuned without
+// breaking these tests. S4 CONTRACT.
+
+private func strainSnap(_ metrics: HealthMetrics) -> HealthSnapshot {
+    HealthSnapshot.derive(from: metrics, at: s2Epoch)
+}
+
+@MainActor
+private func strainValue(_ result: StrainResult) -> Double {
+    if case .scored(let value) = result { return value }
+    expect(false, "expected .scored, got .noData (finite active energy must score)")
+    return -1
+}
+
+group("strain-score") {
+    // SB#1 — StrainResult is Equatable.
+    expect(StrainResult.noData == .noData, "StrainResult.noData Equatable")
+    expect(StrainResult.scored(value: 1) != .noData, "scored != noData")
+    expect(StrainResult.scored(value: 5) == .scored(value: 5), "scored value Equatable")
+
+    // SB#2 — nil active energy → .noData (omitted ≠ a measured 0).
+    expect(
+        Strain.score(for: strainSnap(HealthMetrics())) == .noData,
+        "nil active energy → .noData")
+    expect(
+        Strain.score(for: strainSnap(HealthMetrics(hrvRMSSD: 50, sleepEfficiency: 0.9)))
+            == .noData,
+        "nil active energy (other metrics present) → .noData")
+
+    // SB#3 — non-finite active energy → .noData (NaN / +inf / -inf).
+    expect(
+        Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: .nan)))
+            == .noData,
+        "NaN active energy → .noData")
+    expect(
+        Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: .infinity)))
+            == .noData,
+        "+inf active energy → .noData")
+    expect(
+        Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: -.infinity)))
+            == .noData,
+        "-inf active energy → .noData")
+
+    // SB#4 — finite active energy → .scored, value finite & in 0...21.
+    let s300 = Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: 300)))
+    if case .scored(let v) = s300 {
+        expect(v.isFinite && (0...21).contains(v), "scored value finite & in 0...21")
+    } else {
+        expect(false, "expected .scored for finite active energy")
+    }
+
+    // SB#5 — 0 kcal → .scored(value: 0) (rest day = zero-Strain anchor).
+    expect(
+        Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: 0)))
+            == .scored(value: 0),
+        "0 kcal → Strain 0 (rest day)")
+
+    // SB#6 — strict monotonicity in active energy.
+    let m150 = strainValue(
+        Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: 150))))
+    let m600 = strainValue(
+        Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: 600))))
+    let m1500 = strainValue(
+        Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: 1500))))
+    expect(m150 < m600 && m600 < m1500, "Strain strictly increases with active energy")
+
+    // SB#7 — diminishing returns / concavity (committed Stage-1 behavior): equal energy
+    // increments add strictly less Strain at higher energy (forbids a linear map).
+    let s0 = strainValue(
+        Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: 0))))
+    let s600 = strainValue(
+        Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: 600))))
+    let s1200 = strainValue(
+        Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: 1200))))
+    expect((s1200 - s600) < (s600 - s0), "diminishing returns: concave, not linear")
+
+    // SB#8 — large input saturates: finite, ≤ 21, still monotone at the top.
+    let sHuge = strainValue(
+        Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: 100_000))))
+    expect(sHuge.isFinite && sHuge <= 21, "huge active energy → finite, ≤ 21 (saturates)")
+    expect(sHuge > s600, "huge active energy still monotone above 600 kcal")
+
+    // SB#9 — negative FINITE kcal → .scored equal to the zero anchor (clamp to 0 exertion;
+    // NOT .noData — non-finite is SB#3's path).
+    expect(
+        Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: -100)))
+            == Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: 0))),
+        "negative finite kcal clamps to 0 → strain(-100) == strain(0)")
+    let sNeg = strainValue(
+        Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: -100))))
+    expect(sNeg.isFinite && (0...21).contains(sNeg), "negative kcal → finite, in 0...21")
+
+    // SB#10 — upper bound never exceeded across a representative sweep.
+    for kcal in [0.0, 1, 50, 200, 450, 800, 1600, 5000, 50_000] {
+        let v = strainValue(
+            Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: kcal))))
+        expect(v.isFinite && (0...21).contains(v), "sweep kcal=\(kcal) → value in 0...21")
+    }
+
+    // SB#11 — reads ONLY workout energy: with active energy fixed at 300, varying RHR / HRV /
+    // sleep individually does not change Strain (analogous to S2 RB#13 STRENGTH-only).
+    let strainBase = Strain.score(
+        for: strainSnap(
+            HealthMetrics(
+                restingHeartRate: 60, hrvRMSSD: 20, sleepEfficiency: 0.5,
+                activeWorkoutEnergyKilocalories: 300)))
+    let strainVaryRHR = Strain.score(
+        for: strainSnap(
+            HealthMetrics(
+                restingHeartRate: 40, hrvRMSSD: 20, sleepEfficiency: 0.5,
+                activeWorkoutEnergyKilocalories: 300)))
+    let strainVaryHRV = Strain.score(
+        for: strainSnap(
+            HealthMetrics(
+                restingHeartRate: 60, hrvRMSSD: 90, sleepEfficiency: 0.5,
+                activeWorkoutEnergyKilocalories: 300)))
+    let strainVarySleep = Strain.score(
+        for: strainSnap(
+            HealthMetrics(
+                restingHeartRate: 60, hrvRMSSD: 20, sleepEfficiency: 0.95,
+                activeWorkoutEnergyKilocalories: 300)))
+    expect(strainBase == strainVaryRHR, "Strain invariant to RHR (active energy fixed)")
+    expect(strainBase == strainVaryHRV, "Strain invariant to HRV (active energy fixed)")
+    expect(strainBase == strainVarySleep, "Strain invariant to sleep (active energy fixed)")
+}
+
 // MARK: - Summary
 //
 // Fail-fast above means reaching here implies every expectation passed.

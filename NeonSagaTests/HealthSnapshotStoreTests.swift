@@ -82,8 +82,14 @@ final class HealthSnapshotStoreTests: XCTestCase {
         let snap = HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 40), at: capturedAt)
         let earlier = Date(timeIntervalSince1970: 9000)
         let later = Date(timeIntervalSince1970: 9999)
-        context.insert(HealthSnapshotRecord(from: snap, storedAt: earlier))
-        context.insert(HealthSnapshotRecord(from: snap, storedAt: later))
+        // Force identical capturedAt on both so the test isolates the storedAt
+        // tie-break (and cannot pass via a capturedAt difference).
+        let r1 = HealthSnapshotRecord(from: snap, storedAt: earlier)
+        r1.capturedAt = capturedAt
+        let r2 = HealthSnapshotRecord(from: snap, storedAt: later)
+        r2.capturedAt = capturedAt
+        context.insert(r1)
+        context.insert(r2)
         try context.save()
 
         XCTAssertEqual(try store.latest()?.storedAt, later)
@@ -149,6 +155,8 @@ final class HealthSnapshotStoreTests: XCTestCase {
         XCTAssertEqual(rec.fatigueValue, expected.fatigue.value)
         XCTAssertEqual(rec.strengthValue, expected.strength.value)
         XCTAssertEqual(rec.restingHeartRate, 55)
+        XCTAssertEqual(rec.hrvRMSSD, 50)
+        XCTAssertEqual(rec.sleepEfficiency, 0.95)
         XCTAssertEqual(rec.activeWorkoutEnergyKilocalories, 1200)
     }
 
@@ -165,16 +173,23 @@ final class HealthSnapshotStoreTests: XCTestCase {
 
     @MainActor
     func testDeriveAndStoreThrowsAndInsertsNothingOnSourceError() async throws {
-        let store = HealthSnapshotStore(context: ModelContext(try makeContainer()))
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let store = HealthSnapshotStore(context: context)
+        // Seed an existing record so we can prove a throw leaves latest() unchanged.
+        let seeded = Date(timeIntervalSince1970: 6000)
+        try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 25), at: seeded))
+
         do {
             _ = try await store.deriveAndStore(
                 from: ThrowingSource(),
-                at: Date(timeIntervalSince1970: 1)
+                at: Date(timeIntervalSince1970: 9_000_000)
             )
             XCTFail("expected deriveAndStore to rethrow the source error")
         } catch is SourceError {
             // expected — source failure propagates
         }
-        XCTAssertNil(try store.latest())
+        XCTAssertEqual(try store.latest()?.capturedAt, seeded)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<HealthSnapshotRecord>()).count, 1)
     }
 }

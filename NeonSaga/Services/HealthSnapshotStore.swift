@@ -10,8 +10,7 @@ import SwiftData
     }
 
     func save(_ snapshot: HealthSnapshot) throws {
-        context.insert(HealthSnapshotRecord(from: snapshot))
-        try context.save()
+        try insertAndSave(HealthSnapshotRecord(from: snapshot))
     }
 
     func latest() throws -> HealthSnapshotRecord? {
@@ -31,8 +30,19 @@ import SwiftData
         let metrics = try await source.latestMetrics()
         let snapshot = HealthSnapshot.derive(from: metrics, at: date)
         let record = HealthSnapshotRecord(from: snapshot)
-        context.insert(record)
-        try context.save()
+        try insertAndSave(record)
         return record
+    }
+
+    /// Inserts `record` then saves. On save failure, drops the pending insert so
+    /// a stale record can't be retried by a later `save()`, then rethrows the error.
+    private func insertAndSave(_ record: HealthSnapshotRecord) throws {
+        context.insert(record)
+        do {
+            try context.save()
+        } catch {
+            context.delete(record)
+            throw error
+        }
     }
 }

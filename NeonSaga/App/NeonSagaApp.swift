@@ -10,11 +10,27 @@ import SwiftUI
 // links end-to-end (app → NeonSagaCore).
 @main
 struct NeonSagaApp: App {
+    // CloudKit stays dormant (`cloudKitDatabase: .none`) until a paid Apple
+    // Developer account. The explicit configuration prevents SwiftData from
+    // auto-enabling sync once a CloudKit entitlement is added (CLAUDE.md §5);
+    // the convenience `.modelContainer(for:)` would default to `.automatic`.
+    let modelContainer: ModelContainer
+
+    init() {
+        do {
+            let configuration = ModelConfiguration(cloudKitDatabase: .none)
+            modelContainer = try ModelContainer(
+                for: HealthSnapshotRecord.self, configurations: configuration)
+        } catch {
+            fatalError("Failed to build the NeonSaga ModelContainer: \(error)")
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             GenesisRootView()
         }
-        .modelContainer(for: HealthSnapshotRecord.self)
+        .modelContainer(modelContainer)
     }
 }
 

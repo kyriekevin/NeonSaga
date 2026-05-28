@@ -19,7 +19,7 @@ final class HealthDetailViewModelTests: XCTestCase {
         return HealthSnapshotStore(context: ModelContext(container))
     }
 
-    /// Save `count` prior-day snapshots strictly before `base`, each with finite HRV.
+    /// Save `count` prior-day snapshots strictly before `base`, each with HRV 40.
     @MainActor
     private func seedPriorDays(_ store: HealthSnapshotStore, count: Int) throws {
         guard count > 0 else { return }
@@ -27,6 +27,21 @@ final class HealthDetailViewModelTests: XCTestCase {
             let day = base.addingTimeInterval(-86_400 * Double(i))
             try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 40), at: day))
         }
+    }
+
+    /// Seed 14 prior days with mean 40 / population std 10 (7×30 + 7×50) plus a latest
+    /// record at `base` whose today-HRV 50 is exactly one std above the baseline mean.
+    /// Recovery then scores to a deterministic, non-round value: z = 1 → hrvTerm = 65;
+    /// RHR / sleep absent → neutral 50; value = 0.5·65 + 0.25·50 + 0.25·50 = 57.5
+    /// (band YELLOW, ring fraction 0.575). A hard-coded stub cannot guess this.
+    @MainActor
+    private func seedScoredRecovery(_ store: HealthSnapshotStore) throws {
+        for i in 1...14 {
+            let day = base.addingTimeInterval(-86_400 * Double(i))
+            let hrv: Double = i <= 7 ? 30 : 50
+            try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: hrv), at: day))
+        }
+        try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 50), at: base))
     }
 
     // MARK: - Empty store (behavior 6)
@@ -49,14 +64,14 @@ final class HealthDetailViewModelTests: XCTestCase {
     @MainActor
     func testScoredRecoveryWhenFourteenPriorSamples() throws {
         let store = try makeStore()
-        try seedPriorDays(store, count: 14)
-        try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 45), at: base))
+        try seedScoredRecovery(store)
 
         let vm = HealthDetailViewModel(store: store)
         guard case .scored(let value, let band) = vm.recovery else {
             return XCTFail("expected .scored with 14 prior baseline samples")
         }
-        XCTAssertTrue(value >= 0 && value <= 100)
+        XCTAssertEqual(value, 57.5, accuracy: 1e-9)
+        XCTAssertEqual(band, .yellow)
         XCTAssertEqual(band, Recovery.band(for: value))
     }
 
@@ -75,17 +90,29 @@ final class HealthDetailViewModelTests: XCTestCase {
     }
 
     @MainActor
-    func testRecoveryRingFractionMatchesScore() throws {
+    func testNilTodayHRVCalibratesDespiteSufficientBaseline() throws {
         let store = try makeStore()
         try seedPriorDays(store, count: 14)
-        try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 45), at: base))
+        // Latest snapshot has NO today-HRV (workout energy only). Recovery.score gates
+        // on a finite today-HRV in addition to ≥14 baseline samples, so this must
+        // calibrate at the full baseline count (Codex tests-review F2).
+        try store.save(
+            HealthSnapshot.derive(
+                from: HealthMetrics(activeWorkoutEnergyKilocalories: 100), at: base))
 
         let vm = HealthDetailViewModel(store: store)
-        guard case .scored(let value, _) = vm.recovery else {
-            return XCTFail("expected .scored")
-        }
+        XCTAssertEqual(vm.recovery, .calibrating(daysOfData: 14))
+        XCTAssertNil(vm.recoveryRingFraction)
+    }
+
+    @MainActor
+    func testRecoveryRingFractionMatchesScore() throws {
+        let store = try makeStore()
+        try seedScoredRecovery(store)
+
+        let vm = HealthDetailViewModel(store: store)
         let fraction = try XCTUnwrap(vm.recoveryRingFraction)
-        XCTAssertEqual(fraction, value / 100.0, accuracy: 1e-9)
+        XCTAssertEqual(fraction, 0.575, accuracy: 1e-9)
     }
 
     // MARK: - Strain (behavior 4)
@@ -93,6 +120,7 @@ final class HealthDetailViewModelTests: XCTestCase {
     @MainActor
     func testStrainScoredFromLatestWorkoutEnergy() throws {
         let store = try makeStore()
+        // 300 kcal == Strain's half-saturation constant → 21·300/600 == 10.5 exactly.
         try store.save(
             HealthSnapshot.derive(
                 from: HealthMetrics(activeWorkoutEnergyKilocalories: 300), at: base))
@@ -101,9 +129,9 @@ final class HealthDetailViewModelTests: XCTestCase {
         guard case .scored(let value) = vm.strain else {
             return XCTFail("expected .scored strain")
         }
-        XCTAssertTrue(value >= 0 && value <= 21)
+        XCTAssertEqual(value, 10.5, accuracy: 1e-9)
         let fraction = try XCTUnwrap(vm.strainFraction)
-        XCTAssertEqual(fraction, value / 21.0, accuracy: 1e-9)
+        XCTAssertEqual(fraction, 0.5, accuracy: 1e-9)
     }
 
     @MainActor
@@ -144,10 +172,12 @@ final class HealthDetailViewModelTests: XCTestCase {
         XCTAssertEqual(vm.subStats[1].substat, .fatigue)
         XCTAssertEqual(vm.subStats[1].value, 70, accuracy: 1e-9)
         XCTAssertEqual(vm.subStats[1].level, Level.of(70))
+        XCTAssertEqual(vm.subStats[1].fillFraction, 0.70, accuracy: 1e-9)
 
         XCTAssertEqual(vm.subStats[2].substat, .strength)
         XCTAssertEqual(vm.subStats[2].value, 88, accuracy: 1e-9)
         XCTAssertEqual(vm.subStats[2].level, Level.of(88))
+        XCTAssertEqual(vm.subStats[2].fillFraction, 0.88, accuracy: 1e-9)
 
         XCTAssertEqual(
             vm.healthValue, HealthStat.value(hunger: 40, fatigue: 70, strength: 88))
@@ -167,7 +197,7 @@ final class HealthDetailViewModelTests: XCTestCase {
         XCTAssertEqual(hunger.value, 50, accuracy: 1e-9)
     }
 
-    // MARK: - refresh() + placeholder slots (behaviors 1, 7)
+    // MARK: - refresh() + placeholder slots (behavior 7)
 
     @MainActor
     func testRefreshPicksUpNewlySavedSnapshot() throws {
@@ -185,7 +215,7 @@ final class HealthDetailViewModelTests: XCTestCase {
     @MainActor
     func testSleepAndAIBriefPlaceholdersPresent() throws {
         let vm = HealthDetailViewModel(store: try makeStore())
-        XCTAssertFalse(vm.sleepPlaceholder.isEmpty)
-        XCTAssertFalse(vm.aiBriefPlaceholder.isEmpty)
+        XCTAssertTrue(vm.sleepPlaceholder.contains("S8"))
+        XCTAssertTrue(vm.aiBriefPlaceholder.contains("S9"))
     }
 }

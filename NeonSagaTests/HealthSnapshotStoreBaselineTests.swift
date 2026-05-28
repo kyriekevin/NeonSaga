@@ -8,7 +8,7 @@ import XCTest
 // prior-day HRV baseline feeding Recovery.score (CONTRACT S6). Fails to build until
 // the green commit adds the method. The baseline must exclude the record being
 // scored (no z-score self-reference), drop nil / non-finite HRV, and window to the
-// most-recent `limit` records before the cutoff.
+// most-recent `limit` records before the cutoff, ordered newest-first.
 final class HealthSnapshotStoreBaselineTests: XCTestCase {
 
     private let base = Date(timeIntervalSince1970: 1_700_000_000)
@@ -26,7 +26,7 @@ final class HealthSnapshotStoreBaselineTests: XCTestCase {
         // The record being scored (latest, at `base`) carries HRV 99 — it must NOT
         // appear in its own baseline.
         try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 99), at: base))
-        // Prior days: two finite, one nil, one NaN.
+        // Prior days (newest → oldest): finite 30, nil, NaN, finite 45.
         try store.save(
             HealthSnapshot.derive(
                 from: HealthMetrics(hrvRMSSD: 30), at: base.addingTimeInterval(-86_400)))
@@ -40,23 +40,25 @@ final class HealthSnapshotStoreBaselineTests: XCTestCase {
             HealthSnapshot.derive(
                 from: HealthMetrics(hrvRMSSD: 45), at: base.addingTimeInterval(-4 * 86_400)))
 
-        let baseline = try store.recentHRVBaseline(before: base)
-        XCTAssertEqual(Set(baseline), Set([30.0, 45.0]))
-        XCTAssertFalse(baseline.contains(99))
+        // Exact newest-first array: excludes the scored record (99), the nil, and the
+        // NaN; keeps the two finite priors in capturedAt-descending order.
+        XCTAssertEqual(try store.recentHRVBaseline(before: base), [30.0, 45.0])
     }
 
     @MainActor
     func testRecentHRVBaselineRespectsLimitNewestFirst() throws {
         let store = try makeStore()
-        // 40 prior days, HRV i at base − i days (i = 1 is the newest prior).
+        // HRV decorrelated from recency: f(i) = (i·37 mod 97) + 1 is injective over
+        // i = 1...40 and non-monotonic, so a sort-by-value impl produces a different
+        // order than newest-first and an oldest-window impl produces different values.
+        func hrv(_ i: Int) -> Double { Double((i * 37) % 97 + 1) }
         for i in 1...40 {
             let day = base.addingTimeInterval(-86_400 * Double(i))
-            try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: Double(i)), at: day))
+            try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: hrv(i)), at: day))
         }
 
-        let baseline = try store.recentHRVBaseline(before: base, limit: 28)
-        XCTAssertEqual(baseline.count, 28)
-        // The 28 most-recent priors are i = 1...28 → HRV {1...28}; the oldest 12 drop.
-        XCTAssertEqual(Set(baseline), Set((1...28).map(Double.init)))
+        // The 28 most-recent priors are i = 1...28 (i = 1 is newest), in that order.
+        XCTAssertEqual(
+            try store.recentHRVBaseline(before: base, limit: 28), (1...28).map(hrv))
     }
 }

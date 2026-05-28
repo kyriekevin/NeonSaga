@@ -1,15 +1,17 @@
 # NeonSaga — Status (genesis)
 
-**Snapshot date:** 2026-05-27
+**Snapshot date:** 2026-05-28
 **Product source of truth:** `docs/PRODUCT.md`
 **Roadmap source of truth:** `ROADMAP.md`
 **规范 source of truth:** `CLAUDE.md`
 
 ## What ships today
 
-Nothing. NeonSaga is at genesis — only 规范 docs, templates, and skeleton
-folders exist. No production Swift code, no tests, no Xcode project, no
-`make` targets resolve yet.
+No user-facing product yet. The genesis toolchain is wired: the
+`NeonSagaCore` SwiftPM package builds, the custom test runner is seeded and
+green, `make` targets resolve, and `make verify` passes on the empty
+skeleton. No production feature code yet (Stage 1 begins that). The iOS app
+and test targets are seeded empty — they go green once Stage 1 lands sources.
 
 ## What's next
 
@@ -31,8 +33,8 @@ See `ROADMAP.md` §2 for Stage 1 scope and Plan B cut order.
 
 | Surface | Files |
 |---|---|
-| `NeonSagaCore/Sources/NeonSagaCore/` | 0 |
-| `NeonSagaCore/Sources/NeonSagaCoreTests/` | 0 (custom runner to be seeded in Stage 1 CONTRACT) |
+| `NeonSagaCore/Sources/NeonSagaCore/` | 1 (`NeonSagaCore.swift` — genesis version seed) |
+| `NeonSagaCore/Sources/NeonSagaCoreTests/` | 1 (`main.swift` — custom runner + genesis smoke test) |
 | `NeonSaga/Models/` | 0 |
 | `NeonSaga/Services/` | 0 |
 | `NeonSaga/Views/` | 0 |
@@ -43,15 +45,18 @@ Updated after each Stage exit per `CLAUDE.md` §1.4.
 
 ## Verification state
 
-- `make verify`: not yet wired (Makefile genesis state)
-- `make verify-full`: not yet wired
-- Latest iOS test count: N/A
+- `make verify`: **green** — pre-commit hooks (swift-format lint + hygiene) +
+  `make build-core` + `make test-core` (custom runner: `2 passed, 0 failed`).
+- `make verify-full`: not yet green — iOS app/test targets are seeded empty
+  (no `@main` entry point until Stage 1), so `make build` / `make test` do not
+  yet pass. `make gen` succeeds.
+- Latest iOS test count: N/A (`NeonSagaTests` empty until Stage 1)
 - Latest screenshots: N/A — `docs/screenshots/` empty until Stage 1 ships
 
 ## Git state
 
-- Branch: not yet `git init`'d (awaiting owner approval of genesis 规范)
-- Tags: none
+- Branch: `main`, pushed to `origin` (github.com/kyriekevin/NeonSaga).
+- Tags: none (first tag `v0.1` at Stage 1 exit).
 
 ## Pending genesis tasks
 
@@ -59,17 +64,17 @@ These are pre-Stage-1 setup tasks. Track and complete before Stage 1
 CONTRACT starts. Maintaining them here (not in `ROADMAP.md`) keeps the
 ROADMAP focused on product stages.
 
-- [ ] Owner approves `CLAUDE.md`
-- [ ] Owner approves `docs/ROADMAP.md`
-- [ ] `git init` + first commit (`init: NeonSaga genesis`)
-- [ ] Wire `Makefile`
-- [ ] Wire `project.yml` (XcodeGen skeleton)
-- [ ] Wire `NeonSagaCore/Package.swift`
-- [ ] Seed `NeonSagaCore/Sources/NeonSagaCoreTests/main.swift` (custom runner)
-- [ ] Wire `.swift-format` and `.pre-commit-config.yaml`
+- [x] Owner approves `CLAUDE.md`
+- [x] Owner approves `docs/ROADMAP.md`
+- [x] `git init` + first commit (`init: NeonSaga genesis`)
+- [x] Wire `Makefile`
+- [x] Wire `project.yml` (XcodeGen skeleton)
+- [x] Wire `NeonSagaCore/Package.swift`
+- [x] Seed `NeonSagaCore/Sources/NeonSagaCoreTests/main.swift` (custom runner)
+- [x] Wire `.swift-format` and `.pre-commit-config.yaml`
 - [x] `.claude/skills/tdd/` skill in place
 - [x] `AGENTS.md` symlink → `CLAUDE.md`
-- [ ] `make verify` green on empty skeleton
+- [x] `make verify` green on empty skeleton
 
 ## Versioning summary (from `ROADMAP.md` §1)
 

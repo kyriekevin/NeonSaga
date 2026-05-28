@@ -7,11 +7,11 @@
 
 ## What ships today
 
-No user-facing product yet. The genesis toolchain is wired: the
-`NeonSagaCore` SwiftPM package builds, the custom test runner is seeded and
-green, `make` targets resolve, and `make verify` passes on the empty
-skeleton. No production feature code yet (Stage 1 begins that). The iOS app
-and test targets are seeded empty — they go green once Stage 1 lands sources.
+No user-facing product yet. The genesis toolchain is wired and a minimal
+`@main` app shell builds + launches (shows "NeonSaga / core 0.0.0-genesis").
+`make verify` and `make verify-full` are both green on this skeleton. No
+production feature code yet — Stage 1 begins that. The 5-tab IA, real views,
+`@Model` classes, and services are empty placeholders until Stage 1.
 
 ## What's next
 
@@ -35,10 +35,11 @@ See `ROADMAP.md` §2 for Stage 1 scope and Plan B cut order.
 |---|---|
 | `NeonSagaCore/Sources/NeonSagaCore/` | 1 (`NeonSagaCore.swift` — genesis version seed) |
 | `NeonSagaCore/Sources/NeonSagaCoreTests/` | 1 (`main.swift` — custom runner + genesis smoke test) |
+| `NeonSaga/App/` | 1 (`NeonSagaApp.swift` — minimal `@main` shell) |
 | `NeonSaga/Models/` | 0 |
 | `NeonSaga/Services/` | 0 |
 | `NeonSaga/Views/` | 0 |
-| `NeonSagaTests/` | 0 |
+| `NeonSagaTests/` | 1 (`GenesisSmokeTests.swift` — bundle smoke) |
 | `docs/adr/` | 1 ADR + template (ADR-001 accepted) |
 
 Updated after each Stage exit per `CLAUDE.md` §1.4.
@@ -47,15 +48,20 @@ Updated after each Stage exit per `CLAUDE.md` §1.4.
 
 - `make verify`: **green** — pre-commit hooks (swift-format lint + hygiene) +
   `make build-core` + `make test-core` (custom runner: `2 passed, 0 failed`).
-- `make verify-full`: not yet green — iOS app/test targets are seeded empty
-  (no `@main` entry point until Stage 1), so `make build` / `make test` do not
-  yet pass. `make gen` succeeds.
-- Latest iOS test count: N/A (`NeonSagaTests` empty until Stage 1)
+- `make verify-full`: **green** — `make verify` + `make gen` + iOS `make build`
+  + iOS `make test` (the minimal `@main` shell + bundle smoke pass on the
+  iPhone 17 simulator). Feature-level build/test depth begins at Stage 1
+  (genesis bootstrap clause, `CLAUDE.md` §1.9).
+- Latest iOS test count: 1 (`GenesisSmokeTests` bundle smoke)
 - Latest screenshots: N/A — `docs/screenshots/` empty until Stage 1 ships
 
 ## Git state
 
-- Branch: `main`, pushed to `origin` (github.com/kyriekevin/NeonSaga).
+- Default branch: `main` — protected (PRs required before merge; force-push +
+  deletion blocked; enforced for admins too).
+- Workflow: all changes land via feature branch → PR → Codex review → merge
+  (`CLAUDE.md` §8). Genesis specs + ADR-001 are the root commit (`3b098d4`);
+  the build toolchain + app shell land via PR #1.
 - Tags: none (first tag `v0.1` at Stage 1 exit).
 
 ## Pending genesis tasks
@@ -75,6 +81,7 @@ ROADMAP focused on product stages.
 - [x] `.claude/skills/tdd/` skill in place
 - [x] `AGENTS.md` symlink → `CLAUDE.md`
 - [x] `make verify` green on empty skeleton
+- [x] Minimal `@main` app shell + bundle smoke → `make verify-full` green
 
 ## Versioning summary (from `ROADMAP.md` §1)
 

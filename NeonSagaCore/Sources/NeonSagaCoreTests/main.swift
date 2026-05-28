@@ -439,6 +439,25 @@ group("recovery-score") {
             hrvBaseline: baselineVaried))
     expect(belowMean < aboveMean, "Recovery strictly increases with today-HRV")
 
+    // RB #7b — Recovery is BASELINE-NORMALIZED: the SAME today-HRV scores strictly HIGHER
+    // against a lower-mean baseline (today above baseline) than a higher-mean baseline (today
+    // below). Forbids an impl that uses absolute HRV and ignores the 28-day baseline.
+    let lowMeanBaseline = (0..<28).map { 24.0 + Double($0) * 0.5 }  // mean ~30.75, std > 0
+    let highMeanBaseline = (0..<28).map { 74.0 + Double($0) * 0.5 }  // mean ~80.75, std > 0
+    let vsLowBaseline = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(hrvRMSSD: 55, restingHeartRate: 60, sleepEfficiency: 0.8)),
+            hrvBaseline: lowMeanBaseline))
+    let vsHighBaseline = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(hrvRMSSD: 55, restingHeartRate: 60, sleepEfficiency: 0.8)),
+            hrvBaseline: highMeanBaseline))
+    expect(
+        vsLowBaseline > vsHighBaseline,
+        "baseline-normalized: today=55 above a low-mean baseline scores > below a high-mean one")
+
     // RB #8 — Recovery strictly increases with sleep efficiency (others fixed).
     let loSleep = recoveryValue(
         Recovery.score(

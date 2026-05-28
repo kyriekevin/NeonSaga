@@ -64,10 +64,5 @@ private func normalized(_ raw: Double?, _ transform: (Double) -> Double) -> Doub
     guard let raw = raw, raw.isFinite else { return nil }
     let transformed = transform(raw)
     guard transformed.isFinite else { return nil }
-    return clamp(transformed, 0, 100)
-}
-
-/// Clamps `x` to `[lo, hi]`. Input is assumed finite (call via `normalized`).
-private func clamp(_ x: Double, _ lo: Double, _ hi: Double) -> Double {
-    min(max(x, lo), hi)
+    return transformed.clamped(to: 0...100)
 }

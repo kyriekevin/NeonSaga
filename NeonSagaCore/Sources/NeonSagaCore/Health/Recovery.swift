@@ -51,7 +51,7 @@ public enum Recovery {
         let hrvTerm: Double
         if std >= 1.0 && std.isFinite {
             let z = (hrv - mean) / std
-            hrvTerm = clampVal(50.0 + z * 15.0, 0, 100)
+            hrvTerm = (50.0 + z * 15.0).clamped(to: 0...100)
         } else {
             // Zero- or near-zero variance (std < 1.0 ms) → neutral; a tiny std would otherwise
             // blow the z-score to the clamp rails on measurement noise. Today-HRV must not matter.
@@ -61,7 +61,7 @@ public enum Recovery {
         // 4. Resting-HR term (weight 0.25) — lower is better, mapped over 40…100.
         let rhrTerm: Double
         if let rhr = snapshot.metrics.restingHeartRate, rhr.isFinite {
-            rhrTerm = clampVal((100.0 - rhr) / 60.0 * 100.0, 0, 100)
+            rhrTerm = ((100.0 - rhr) / 60.0 * 100.0).clamped(to: 0...100)
         } else {
             rhrTerm = 50.0
         }
@@ -69,20 +69,13 @@ public enum Recovery {
         // 5. Sleep term (weight 0.25) — higher is better; efficiency is a 0…1 fraction.
         let sleepTerm: Double
         if let eff = snapshot.metrics.sleepEfficiency, eff.isFinite {
-            sleepTerm = clampVal(eff * 100.0, 0, 100)
+            sleepTerm = (eff * 100.0).clamped(to: 0...100)
         } else {
             sleepTerm = 50.0
         }
 
         // 6. Weighted blend.
-        let value = clampVal(0.5 * hrvTerm + 0.25 * rhrTerm + 0.25 * sleepTerm, 0, 100)
+        let value = (0.5 * hrvTerm + 0.25 * rhrTerm + 0.25 * sleepTerm).clamped(to: 0...100)
         return .scored(value: value, band: Recovery.band(for: value))
     }
-}
-
-// MARK: - Private helpers
-
-/// Clamps `x` to [lo, hi].
-private func clampVal(_ x: Double, _ lo: Double, _ hi: Double) -> Double {
-    min(max(x, lo), hi)
 }

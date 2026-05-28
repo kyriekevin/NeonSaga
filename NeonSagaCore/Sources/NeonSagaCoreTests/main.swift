@@ -66,6 +66,49 @@ group("genesis-smoke") {
     expect(1 + 1 == 2, "runner arithmetic sanity")
 }
 
+// MARK: - Stage 1 · Slice 1 — HEALTH domain (RED)
+//
+// Asserts the interface the green: impl must satisfy: Level.of, SubStat,
+// SubStatValue, LevelUp.detect, HealthStat. Formulas from PRODUCT §6/§7.
+
+group("health-lv-math") {
+    // Per-value LV = floor((value / 100) × 99) + 1, clamped to LV 1–100 (PRODUCT §7).
+    expect(Level.of(0) == 1, "Level.of(0) == 1")
+    expect(Level.of(1) == 1, "Level.of(1) == 1")
+    expect(Level.of(1.5) == 2, "Level.of(1.5) == 2 (LV-1→LV-2 threshold ≈1.0101, not ≥2)")
+    expect(Level.of(50) == 50, "Level.of(50) == 50")
+    expect(Level.of(99) == 99, "Level.of(99) == 99")
+    expect(Level.of(100) == 100, "Level.of(100) == 100")
+    expect(Level.of(149) == 100, "Level.of(149) caps at LV 100")
+    expect(Level.of(-5) == 1, "Level.of(-5) floors at LV 1")
+    expect(
+        SubStatValue(.fatigue, value: 60).level == 60, "SubStatValue.level recomputes from value")
+}
+
+group("health-levelup-detect") {
+    // LevelUp.detect returns a crossing iff newLevel > oldLevel, else nil.
+    expect(LevelUp.detect(from: 40, to: 60)?.oldLevel == 40, "40→60 reports oldLevel 40")
+    expect(LevelUp.detect(from: 40, to: 60)?.newLevel == 60, "40→60 reports newLevel 60")
+    expect(LevelUp.detect(from: 60, to: 60) == nil, "equal LV → no crossing")
+    expect(
+        LevelUp.detect(from: 50.0, to: 50.4) == nil, "value moved but LV unchanged → no crossing")
+    expect(LevelUp.detect(from: 60, to: 40) == nil, "decrease → no crossing")
+}
+
+group("health-aggregate") {
+    // HEALTH value = clamp(avg of values, 0, 100); LV = floor(avg of sub-stat LVs) (PRODUCT §6/§7).
+    expect(HealthStat.value(hunger: 60, fatigue: 60, strength: 60) == 60, "HEALTH value = avg = 60")
+    expect(
+        HealthStat.level(hunger: 60, fatigue: 60, strength: 60) == 60,
+        "HEALTH LV = floor(avg sub-LVs) = 60")
+    expect(
+        HealthStat.value(hunger: 120, fatigue: 100, strength: 100) == 100,
+        "HEALTH value clamps to 100")
+    expect(
+        HealthStat.level(hunger: 1, fatigue: 1, strength: 2) == 1,
+        "HEALTH LV = floor(avg LVs)=1, not LV(avg value)=2")
+}
+
 // MARK: - Summary
 //
 // Fail-fast above means reaching here implies every expectation passed.

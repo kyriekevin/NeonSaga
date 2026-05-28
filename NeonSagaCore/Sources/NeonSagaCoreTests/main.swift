@@ -647,11 +647,15 @@ group("strain-score") {
         Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: -100))))
     expect(sNeg.isFinite && (0...21).contains(sNeg), "negative kcal → finite, in 0...21")
 
-    // SB#10 — upper bound never exceeded across a representative sweep.
+    // SB#10 — across an ascending sweep: every value finite & in 0...21 AND strictly
+    // increasing (monotonicity holds everywhere, not only at SB#6's three points).
+    var prevStrain = -1.0
     for kcal in [0.0, 1, 50, 200, 450, 800, 1600, 5000, 50_000] {
         let v = strainValue(
             Strain.score(for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: kcal))))
         expect(v.isFinite && (0...21).contains(v), "sweep kcal=\(kcal) → value in 0...21")
+        expect(v > prevStrain, "sweep strictly increasing at kcal=\(kcal)")
+        prevStrain = v
     }
 
     // SB#11 — reads ONLY workout energy: with active energy fixed at 300, varying RHR / HRV /
@@ -679,6 +683,14 @@ group("strain-score") {
     expect(strainBase == strainVaryRHR, "Strain invariant to RHR (active energy fixed)")
     expect(strainBase == strainVaryHRV, "Strain invariant to HRV (active energy fixed)")
     expect(strainBase == strainVarySleep, "Strain invariant to sleep (active energy fixed)")
+    // SB#11b (Codex tests-review IMPORTANT #2) — invariant to PRESENCE of the non-energy
+    // fields too: an energy-only snapshot scores the same as a fully-populated one (forbids
+    // a presence-based side term that still reads the forbidden fields).
+    let strainEnergyOnly = Strain.score(
+        for: strainSnap(HealthMetrics(activeWorkoutEnergyKilocalories: 300)))
+    expect(
+        strainBase == strainEnergyOnly,
+        "Strain invariant to presence of RHR/HRV/sleep (energy-only == fully-populated)")
 }
 
 // MARK: - Summary

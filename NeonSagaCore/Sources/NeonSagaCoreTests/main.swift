@@ -83,6 +83,8 @@ group("health-lv-math") {
     expect(Level.of(-5) == 1, "Level.of(-5) floors at LV 1")
     expect(
         SubStatValue(.fatigue, value: 60).level == 60, "SubStatValue.level recomputes from value")
+    expect(SubStatValue(.hunger, value: 30).level == 30, "SubStatValue(.hunger).level == 30")
+    expect(SubStatValue(.strength, value: 80).level == 80, "SubStatValue(.strength).level == 80")
 }
 
 group("health-levelup-detect") {
@@ -107,6 +109,12 @@ group("health-aggregate") {
     expect(
         HealthStat.level(hunger: 1, fatigue: 1, strength: 2) == 1,
         "HEALTH LV = floor(avg LVs)=1, not LV(avg value)=2")
+    expect(
+        HealthStat.value(hunger: -20, fatigue: 0, strength: 0) == 0,
+        "HEALTH value lower-clamps to 0")
+    expect(
+        HealthStat.level(hunger: 1.5, fatigue: 1.5, strength: 1.5) == 2,
+        "HEALTH LV uses floor(avg of LVs)=2, not floor(avg of values)=1")
 }
 
 // MARK: - Summary

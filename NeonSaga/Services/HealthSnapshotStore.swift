@@ -34,6 +34,21 @@ import SwiftData
         return record
     }
 
+    /// Returns the finite HRV values from records strictly older than `capturedAt`,
+    /// sorted newest-first, limited to `limit` records.
+    ///
+    /// The strict `<` predicate excludes the record being scored, so today's HRV
+    /// is never folded into its own baseline (Codex B2).
+    func recentHRVBaseline(before capturedAt: Date, limit: Int = 28) throws -> [Double] {
+        var descriptor = FetchDescriptor<HealthSnapshotRecord>(
+            predicate: #Predicate { $0.capturedAt < capturedAt },
+            sortBy: [SortDescriptor(\.capturedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        let records = try context.fetch(descriptor)
+        return records.compactMap { $0.hrvRMSSD }.filter { $0.isFinite }
+    }
+
     /// Inserts `record` then saves. On save failure, drops the pending insert so
     /// a stale record can't be retried by a later `save()`, then rethrows the error.
     private func insertAndSave(_ record: HealthSnapshotRecord) throws {

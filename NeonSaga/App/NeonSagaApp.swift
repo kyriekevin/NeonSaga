@@ -1,4 +1,5 @@
 import NeonSagaCore
+import SwiftData
 import SwiftUI
 
 // Genesis app shell — a minimal `@main` so the iOS target builds and
@@ -13,6 +14,7 @@ struct NeonSagaApp: App {
         WindowGroup {
             GenesisRootView()
         }
+        .modelContainer(for: HealthSnapshotRecord.self)
     }
 }
 

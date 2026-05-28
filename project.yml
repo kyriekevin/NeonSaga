@@ -60,6 +60,8 @@ targets:
           - "**/.gitkeep"
     dependencies:
       - target: NeonSaga
+      - package: NeonSagaCore
+        product: NeonSagaCore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neonsaga.app.tests

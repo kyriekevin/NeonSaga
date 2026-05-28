@@ -299,6 +299,258 @@ await group("health-snapshot-source") {
         "source round-trip HUNGER matches direct derive")
 }
 
+// MARK: - Stage 1 · Slice 3 — Recovery score (RED)
+//
+// Recovery 0–100 + RED/YELLOW/GREEN bands from a HealthSnapshot's raw HRV / RHR /
+// sleep, baseline-normalized vs a 28-day HRV window. Property-based + anti-cheat
+// (strict per-input contribution, band reachability, no-double-count). S3 CONTRACT.
+
+private func recoverySnap(_ metrics: HealthMetrics) -> HealthSnapshot {
+    HealthSnapshot.derive(from: metrics, at: s2Epoch)
+}
+
+@MainActor
+private func recoveryValue(_ result: RecoveryResult) -> Double {
+    if case .scored(let value, _) = result { return value }
+    expect(false, "expected .scored, got .calibrating (monotonic/neutral inputs must score)")
+    return -1
+}
+
+private func recoveryBand(_ result: RecoveryResult) -> RecoveryBand? {
+    if case .scored(_, let band) = result { return band }
+    return nil
+}
+
+group("recovery-score") {
+    let baselineVaried = (0..<28).map { 40.0 + Double($0) }  // 28 samples, mean 53.5, std > 0
+    let baselineZeroVar = Array(repeating: 50.0, count: 28)  // std == 0
+    let baselineFew = Array(repeating: 50.0, count: 10)  // < 14 → calibrating
+
+    // RB #1 — RecoveryResult / RecoveryBand are Equatable.
+    expect(
+        RecoveryResult.calibrating(daysOfData: 5) == .calibrating(daysOfData: 5),
+        "RecoveryResult Equatable")
+    expect(RecoveryBand.green != RecoveryBand.red, "RecoveryBand Equatable")
+
+    // RB #2 — < 14 finite baseline samples → calibrating(daysOfData: finite count).
+    expect(
+        Recovery.score(for: recoverySnap(HealthMetrics(hrvRMSSD: 55)), hrvBaseline: baselineFew)
+            == .calibrating(daysOfData: 10),
+        "fewer than 14 baseline samples → calibrating(10)")
+    expect(
+        Recovery.score(
+            for: recoverySnap(HealthMetrics(hrvRMSSD: 55)),
+            hrvBaseline: [50, 50, 50, .nan, .infinity]) == .calibrating(daysOfData: 3),
+        "non-finite baseline entries ignored; 3 finite < 14 → calibrating(3)")
+
+    // RB #3 — missing today-HRV → calibrating even with a full baseline.
+    expect(
+        Recovery.score(
+            for: recoverySnap(HealthMetrics(restingHeartRate: 60)), hrvBaseline: baselineVaried)
+            == .calibrating(daysOfData: 28),
+        "missing today-HRV → calibrating despite full baseline")
+    expect(
+        Recovery.score(
+            for: recoverySnap(HealthMetrics(hrvRMSSD: .nan)), hrvBaseline: baselineVaried)
+            == .calibrating(daysOfData: 28),
+        "NaN today-HRV → calibrating despite full baseline")
+    expect(
+        Recovery.score(
+            for: recoverySnap(HealthMetrics(hrvRMSSD: .infinity)), hrvBaseline: baselineVaried)
+            == .calibrating(daysOfData: 28),
+        "infinite today-HRV → calibrating despite full baseline")
+
+    // RB #4 — >= 14 samples + finite HRV → scored, value finite & in 0...100.
+    let scored = Recovery.score(
+        for: recoverySnap(HealthMetrics(restingHeartRate: 60, hrvRMSSD: 55, sleepEfficiency: 0.9)),
+        hrvBaseline: baselineVaried)
+    if case .scored(let value, _) = scored {
+        expect(value.isFinite && (0...100).contains(value), "scored value finite & in 0...100")
+    } else {
+        expect(false, "expected .scored for full baseline + finite HRV")
+    }
+
+    // RB #5 — zero-variance baseline (std == 0) → scored, finite (no NaN).
+    let zeroVar = Recovery.score(
+        for: recoverySnap(HealthMetrics(hrvRMSSD: 60)), hrvBaseline: baselineZeroVar)
+    if case .scored(let value, _) = zeroVar {
+        expect(
+            value.isFinite && (0...100).contains(value),
+            "zero-variance baseline → finite score, no NaN")
+    } else {
+        expect(false, "expected .scored for zero-variance baseline, not calibrating")
+    }
+
+    // RB #5b — under zero-variance baseline the HRV-variance term is NEUTRAL: today-HRV does
+    // not change Recovery (forbids a std=1 fallback that lets HRV dominate under zero variance).
+    let zvLoHRV = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(restingHeartRate: 60, hrvRMSSD: 30, sleepEfficiency: 0.8)),
+            hrvBaseline: baselineZeroVar))
+    let zvHiHRV = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(restingHeartRate: 60, hrvRMSSD: 90, sleepEfficiency: 0.8)),
+            hrvBaseline: baselineZeroVar))
+    expect(zvLoHRV == zvHiHRV, "zero-variance baseline → HRV term neutral (today-HRV irrelevant)")
+
+    // RB #5c (Gemini PR#4 HIGH) — a NEAR-zero-variance baseline (0 < std < 1.0 ms) is likewise
+    // treated as no HRV-variance signal: today-HRV must not swing the score (else a tiny std
+    // blows the z-score to the clamp rails on measurement noise).
+    let baselineNearZeroVar = Array(repeating: 50.0, count: 27) + [50.5]  // std ≈ 0.09 ms
+    let nzvLoHRV = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(restingHeartRate: 60, hrvRMSSD: 30, sleepEfficiency: 0.8)),
+            hrvBaseline: baselineNearZeroVar))
+    let nzvHiHRV = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(restingHeartRate: 60, hrvRMSSD: 90, sleepEfficiency: 0.8)),
+            hrvBaseline: baselineNearZeroVar))
+    expect(nzvLoHRV == nzvHiHRV, "near-zero-variance baseline (std < 1) → HRV term neutral")
+
+    // RB #6 — NaN/inf in today RHR/sleep → still finite scored.
+    let patho = Recovery.score(
+        for: recoverySnap(
+            HealthMetrics(restingHeartRate: .nan, hrvRMSSD: 55, sleepEfficiency: .infinity)),
+        hrvBaseline: baselineVaried)
+    if case .scored(let value, _) = patho {
+        expect(
+            value.isFinite && (0...100).contains(value), "NaN/inf today RHR/sleep → finite score")
+    } else {
+        expect(false, "expected .scored (today HRV present)")
+    }
+
+    // RB #6b — non-finite baseline entries are excluded from mean/std (scored path stays finite).
+    let dirtyBaseline = baselineVaried + [.nan, .infinity, -.infinity]
+    let dirty = Recovery.score(
+        for: recoverySnap(HealthMetrics(restingHeartRate: 60, hrvRMSSD: 55, sleepEfficiency: 0.8)),
+        hrvBaseline: dirtyBaseline)
+    if case .scored(let value, _) = dirty {
+        expect(
+            value.isFinite && (0...100).contains(value),
+            "non-finite baseline entries excluded → finite scored value")
+    } else {
+        expect(false, "expected .scored (28 finite baseline samples despite NaN/inf entries)")
+    }
+    let cleanForDirty = Recovery.score(
+        for: recoverySnap(HealthMetrics(restingHeartRate: 60, hrvRMSSD: 55, sleepEfficiency: 0.8)),
+        hrvBaseline: baselineVaried)
+    expect(
+        dirty == cleanForDirty,
+        "non-finite baseline entries EXCLUDED (not coerced to 0) → same score as clean baseline")
+
+    // RB #7 — Recovery strictly increases with today-HRV (above vs below baseline mean 53.5).
+    let belowMean = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(restingHeartRate: 60, hrvRMSSD: 42, sleepEfficiency: 0.8)),
+            hrvBaseline: baselineVaried))
+    let aboveMean = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(restingHeartRate: 60, hrvRMSSD: 66, sleepEfficiency: 0.8)),
+            hrvBaseline: baselineVaried))
+    expect(belowMean < aboveMean, "Recovery strictly increases with today-HRV")
+
+    // RB #7b — Recovery is BASELINE-NORMALIZED: the SAME today-HRV scores strictly HIGHER
+    // against a lower-mean baseline (today above baseline) than a higher-mean baseline (today
+    // below). Forbids an impl that uses absolute HRV and ignores the 28-day baseline.
+    let lowMeanBaseline = (0..<28).map { 24.0 + Double($0) * 0.5 }  // mean ~30.75, std > 0
+    let highMeanBaseline = (0..<28).map { 74.0 + Double($0) * 0.5 }  // mean ~80.75, std > 0
+    let vsLowBaseline = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(restingHeartRate: 60, hrvRMSSD: 55, sleepEfficiency: 0.8)),
+            hrvBaseline: lowMeanBaseline))
+    let vsHighBaseline = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(restingHeartRate: 60, hrvRMSSD: 55, sleepEfficiency: 0.8)),
+            hrvBaseline: highMeanBaseline))
+    expect(
+        vsLowBaseline > vsHighBaseline,
+        "baseline-normalized: today=55 above a low-mean baseline scores > below a high-mean one")
+
+    // RB #8 — Recovery strictly increases with sleep efficiency (others fixed).
+    let loSleep = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(restingHeartRate: 60, hrvRMSSD: 55, sleepEfficiency: 0.2)),
+            hrvBaseline: baselineVaried))
+    let hiSleep = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(restingHeartRate: 60, hrvRMSSD: 55, sleepEfficiency: 0.95)),
+            hrvBaseline: baselineVaried))
+    expect(loSleep < hiSleep, "Recovery strictly increases with sleep efficiency")
+
+    // RB #9 — Recovery strictly increases as resting HR decreases (others fixed).
+    let hiRHR = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(restingHeartRate: 75, hrvRMSSD: 55, sleepEfficiency: 0.8)),
+            hrvBaseline: baselineVaried))
+    let loRHR = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(restingHeartRate: 45, hrvRMSSD: 55, sleepEfficiency: 0.8)),
+            hrvBaseline: baselineVaried))
+    expect(hiRHR < loRHR, "Recovery strictly increases as resting HR decreases")
+
+    // RB #10 — band reachability: strong→GREEN, weak→RED, mid→YELLOW all reachable.
+    let strong = Recovery.score(
+        for: recoverySnap(HealthMetrics(restingHeartRate: 42, hrvRMSSD: 90, sleepEfficiency: 1.0)),
+        hrvBaseline: baselineVaried)
+    let weak = Recovery.score(
+        for: recoverySnap(HealthMetrics(restingHeartRate: 95, hrvRMSSD: 10, sleepEfficiency: 0.05)),
+        hrvBaseline: baselineVaried)
+    let mid = Recovery.score(
+        for: recoverySnap(HealthMetrics(restingHeartRate: 60, hrvRMSSD: 54, sleepEfficiency: 0.5)),
+        hrvBaseline: baselineVaried)
+    expect(recoveryBand(strong) == .green, "strong recovery inputs → GREEN")
+    expect(recoveryBand(weak) == .red, "weak recovery inputs → RED")
+    expect(recoveryBand(mid) == .yellow, "mid recovery inputs → YELLOW")
+    // value↔band consistency at the cutoffs (<34 red / [34,67) yellow / ≥67 green).
+    if case .scored(let v, let b) = strong { expect(v >= 67 && b == .green, "GREEN ⇔ value ≥ 67") }
+    if case .scored(let v, let b) = weak { expect(v < 34 && b == .red, "RED ⇔ value < 34") }
+    if case .scored(let v, let b) = mid {
+        expect((34..<67).contains(v) && b == .yellow, "YELLOW ⇔ 34 ≤ value < 67")
+    }
+
+    // RB #10b — band threshold rule pinned globally via Recovery.band(for:), independent of
+    // the blend (cutoffs: <34 RED / [34,67) YELLOW / ≥67 GREEN).
+    expect(Recovery.band(for: 0) == .red, "value 0 → RED")
+    expect(Recovery.band(for: 33.9) == .red, "value 33.9 → RED")
+    expect(Recovery.band(for: 34) == .yellow, "value 34 → YELLOW (lower cutoff inclusive)")
+    expect(Recovery.band(for: 66.9) == .yellow, "value 66.9 → YELLOW")
+    expect(Recovery.band(for: 67) == .green, "value 67 → GREEN (lower cutoff inclusive)")
+    expect(Recovery.band(for: 100) == .green, "value 100 → GREEN")
+    // RB #10c (Gemini PR#4 MEDIUM) — NaN must not fall through to .green (best state).
+    expect(Recovery.band(for: .nan) == .red, "NaN value → RED (defensive, never .green)")
+
+    // RB #11 — no double-count: vary workout energy (changes snapshot.fatigue via derive);
+    // Recovery reads only HRV/RHR/sleep, so it must be unchanged.
+    let noWk = Recovery.score(
+        for: recoverySnap(
+            HealthMetrics(
+                restingHeartRate: 60, hrvRMSSD: 55, sleepEfficiency: 0.8,
+                activeWorkoutEnergyKilocalories: 0)), hrvBaseline: baselineVaried)
+    let bigWk = Recovery.score(
+        for: recoverySnap(
+            HealthMetrics(
+                restingHeartRate: 60, hrvRMSSD: 55, sleepEfficiency: 0.8,
+                activeWorkoutEnergyKilocalories: 600)), hrvBaseline: baselineVaried)
+    let nilWk = Recovery.score(
+        for: recoverySnap(HealthMetrics(restingHeartRate: 60, hrvRMSSD: 55, sleepEfficiency: 0.8)),
+        hrvBaseline: baselineVaried)
+    if case .scored = noWk {} else { expect(false, "RB#11 noWk must be .scored, not calibrating") }
+    expect(noWk == bigWk, "Recovery ignores workout energy (0 vs 600) — no double-count")
+    expect(noWk == nilWk, "Recovery ignores workout energy (0 vs nil) — no double-count")
+}
+
 // MARK: - Summary
 //
 // Fail-fast above means reaching here implies every expectation passed.

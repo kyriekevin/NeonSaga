@@ -1,0 +1,25 @@
+# Pre-commit hooks for NeonSaga. Run via `make verify` (hooks target) or
+# `pre-commit run --all-files`. swift-format ships with the Xcode toolchain
+# (`swift format`), so it runs as a local/system hook rather than a managed env.
+#
+# Locked spec docs under docs/*.md are excluded from the whitespace fixers so
+# the hooks never churn 7-pass-reviewed text.
+repos:
+  - repo: local
+    hooks:
+      - id: swift-format-lint
+        name: swift-format lint
+        entry: swift format lint --strict
+        language: system
+        types: [swift]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '^docs/.*\.md$'
+      - id: end-of-file-fixer
+        exclude: '^docs/.*\.md$'
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files

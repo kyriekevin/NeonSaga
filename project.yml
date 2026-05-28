@@ -1,0 +1,66 @@
+# XcodeGen spec for the NeonSaga iOS app. Regenerate with `make gen`.
+# Never hand-edit NeonSaga.xcodeproj (CLAUDE.md §2). The pure-Swift logic lives
+# in the NeonSagaCore SwiftPM package (CLAUDE.md §3); this project wires the iOS
+# app + XCTest bundle on top of it.
+#
+# Genesis note: NeonSaga/ and NeonSagaTests/ are seeded empty (only .gitkeep,
+# excluded below). `make gen` succeeds, but `make build`/`make test` go green
+# once Stage 1 adds the app entry point + views. `make verify` (core layer) is
+# the genesis green bar.
+
+name: NeonSaga
+
+options:
+  bundleIdPrefix: com.neonsaga
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+
+packages:
+  NeonSagaCore:
+    path: NeonSagaCore
+
+settings:
+  base:
+    # Swift 5 language mode + targeted strict concurrency: @Model classes are
+    # non-Sendable per Apple, and `complete` floods warnings when models cross
+    # actor boundaries (CLAUDE.md §4).
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: targeted
+    MARKETING_VERSION: "0.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  NeonSaga:
+    type: application
+    platform: iOS
+    sources:
+      - path: NeonSaga
+        excludes:
+          - "**/.gitkeep"
+    dependencies:
+      - package: NeonSagaCore
+        product: NeonSagaCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.neonsaga.app
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+    scheme:
+      testTargets:
+        - NeonSagaTests
+
+  NeonSagaTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: NeonSagaTests
+        excludes:
+          - "**/.gitkeep"
+    dependencies:
+      - target: NeonSaga
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.neonsaga.app.tests
+        GENERATE_INFOPLIST_FILE: YES

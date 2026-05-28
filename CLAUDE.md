@@ -53,7 +53,12 @@ agents).
 `NeonSagaCore/Sources/` or `NeonSaga/`). Exempt from `red:`/`green:` commit
 discipline: docs-only PRs (`*.md`), pure config (`project.yml`, `Makefile`,
 `Package.swift`, `.entitlements`, `Info.plist`), pure assets
-(`Assets.xcassets/`), and generated boilerplate (XcodeGen output). Bugfixes
+(`Assets.xcassets/`), generated boilerplate (XcodeGen output), and the
+**one-time genesis bootstrap** — the custom test-runner harness in
+`NeonSagaCoreTests/main.swift`, the minimal `@main` app shell, and the SwiftPM /
+XcodeGen skeleton (the runner cannot be test-driven before it exists, and a
+feature-less shell has no behavior to assert; the first real `red:`/`green:`
+pair lands with the first Stage 1 feature). Bugfixes
 are NEVER exempt — write a reproducing test first. When in doubt → TDD. The
 TDD skill (`.claude/skills/tdd/SKILL.md`) enumerates the same exemptions.
 
@@ -181,6 +186,13 @@ insufficient for SwiftUI/SwiftData regressions.
 
 If a task's scope is ambiguous (touches both core and views), use the broader
 command — when in doubt, `make verify-full`.
+
+**Genesis bootstrap clause:** until the first Stage 1 feature lands, the hard
+bar is `make verify` (hooks + `build-core` + `test-core`). The minimal `@main`
+shell keeps `make build` / `make test` / `make verify-full` green too, but
+feature-level build/test verification is first meaningfully exercised from
+Stage 1 (a feature-less app has no behavior to assert). See §1.2's genesis
+bootstrap exemption.
 
 ---
 

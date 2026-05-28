@@ -56,12 +56,15 @@ public struct HealthSnapshot {
 // MARK: - Private helpers
 
 /// Normalizes an optional raw metric to a clamped 0...100 contribution, or `nil` if the
-/// sample is absent (`nil`) or non-finite (`NaN`/`±inf`). Guarding `isFinite` before any
-/// arithmetic is required — Swift's `min`/`max` propagate `NaN` unpredictably — and keeping
-/// a missing sample as `nil` lets callers exclude it from averages instead of scoring 0.
+/// sample is absent (`nil`), non-finite (`NaN`/`±inf`), or its transform overflows to
+/// non-finite. Guarding `isFinite` on BOTH the raw input and the transformed result is
+/// required — `min`/`max` propagate `NaN`, and clamping `±inf` would silently fabricate a
+/// bound — so an invalid signal is excluded from averages rather than scored 0 or a bound.
 private func normalized(_ raw: Double?, _ transform: (Double) -> Double) -> Double? {
     guard let raw = raw, raw.isFinite else { return nil }
-    return clamp(transform(raw), 0, 100)
+    let transformed = transform(raw)
+    guard transformed.isFinite else { return nil }
+    return clamp(transformed, 0, 100)
 }
 
 /// Clamps `x` to `[lo, hi]`. Input is assumed finite (call via `normalized`).

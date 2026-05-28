@@ -1,13 +1,10 @@
-import NeonSagaCore
 import SwiftData
 import SwiftUI
 
-// Genesis app shell — a minimal `@main` so the iOS target builds and
-// `make verify-full` is green. The real RootView + 5-tab IA
-// (CORE / INGEST / ORACLE / CONTRACTS / ARCHIVE) lands per the Stage 1
-// CONTRACT. Genesis bootstrap scaffolding, exempt from red/green (CLAUDE.md
-// §1.2). The `NeonSagaCore.version` reference proves the package dependency
-// links end-to-end (app → NeonSagaCore).
+// S6: HealthDetailView is the temporary app root while the 5-tab IA is unbuilt.
+// This is NOT the permanent PRODUCT §9 CORE first-eye character sheet; it is an
+// installable entry point so the HEALTH detail surface is reachable and inspectable.
+// Once CORE/RootView lands, HEALTH detail becomes a drill-down from CORE.
 @main
 struct NeonSagaApp: App {
     // CloudKit stays dormant (`cloudKitDatabase: .none`) until a paid Apple
@@ -28,21 +25,8 @@ struct NeonSagaApp: App {
 
     var body: some Scene {
         WindowGroup {
-            GenesisRootView()
+            HealthDetailView()
         }
         .modelContainer(modelContainer)
-    }
-}
-
-private struct GenesisRootView: View {
-    var body: some View {
-        VStack(spacing: 8) {
-            Text("NeonSaga")
-                .font(.largeTitle.weight(.bold))
-            Text("core \(NeonSagaCore.version)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding()
     }
 }

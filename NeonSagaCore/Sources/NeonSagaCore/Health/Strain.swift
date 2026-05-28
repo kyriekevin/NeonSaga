@@ -38,13 +38,6 @@ public enum Strain {
         let computed = maxStrain - maxStrain * halfSaturationKcal / (e + halfSaturationKcal)
 
         // 4. Defensive clamp to 0...maxStrain (the form above already keeps it in range).
-        return .scored(value: clampStrain(computed, 0, maxStrain))
+        return .scored(value: computed.clamped(to: 0...maxStrain))
     }
-}
-
-// MARK: - Private helpers
-
-/// Clamps `x` to [lo, hi].
-private func clampStrain(_ x: Double, _ lo: Double, _ hi: Double) -> Double {
-    min(max(x, lo), hi)
 }

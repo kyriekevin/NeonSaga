@@ -14,6 +14,11 @@ public enum StrainResult: Equatable {
 // MARK: - Strain namespace
 
 public enum Strain {
+    /// Top of the 0–21 Whoop-convention scale. Stage-1 constant (tunable; tests don't pin it).
+    private static let maxStrain = 21.0
+    /// Half-saturation energy: kcal at which Strain reaches maxStrain / 2. Stage-1 constant.
+    private static let halfSaturationKcal = 300.0
+
     /// Synchronous Strain score from a single snapshot.
     ///
     /// Reads ONLY `snapshot.metrics.activeWorkoutEnergyKilocalories`.
@@ -27,14 +32,13 @@ public enum Strain {
         // 2. Clamp negative finite energy to zero (defensive; a negative kcal is not .noData).
         let e = max(raw, 0.0)
 
-        // 3. Saturating map 21·e/(e+K), K=300, written as 21 - 21·K/(e+K): algebraically
-        //    identical but never forms 21·e — avoids the +inf overflow at huge finite e and
-        //    stays strictly < 21 for all finite e ≥ 0 (Codex diff-review).
-        let k = 300.0
-        let computed = 21.0 - 21.0 * k / (e + k)
+        // 3. Saturating map 21·e/(e+K), written as 21 - 21·K/(e+K): algebraically identical
+        //    but never forms 21·e — avoids +inf overflow at huge finite e; stays strictly
+        //    < maxStrain for all finite e ≥ 0 (Codex diff-review).
+        let computed = maxStrain - maxStrain * halfSaturationKcal / (e + halfSaturationKcal)
 
-        // 4. Defensive clamp to 0...21 (the form above already keeps it in range).
-        return .scored(value: clampStrain(computed, 0, 21))
+        // 4. Defensive clamp to 0...maxStrain (the form above already keeps it in range).
+        return .scored(value: clampStrain(computed, 0, maxStrain))
     }
 }
 

@@ -32,6 +32,7 @@ private struct HealthDetailContentView: View {
             .padding()
         }
         .background(Color.black.ignoresSafeArea())
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -220,7 +221,7 @@ private struct SubStatsCard: View {
             }
 
             if viewModel.hasData {
-                ForEach(viewModel.subStats, id: \.substat) { row in
+                ForEach(viewModel.subStats) { row in
                     SubStatBarRow(row: row)
                 }
             } else {
@@ -274,7 +275,3 @@ private struct SubStatBarRow: View {
         }
     }
 }
-
-// MARK: - SubStat: Identifiable
-
-extension SubStat: Hashable {}

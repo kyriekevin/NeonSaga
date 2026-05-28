@@ -2,12 +2,22 @@ import NeonSagaCore
 import Observation
 
 /// A row in the HEALTH sub-stats card.
-struct SubStatRow {
+struct SubStatRow: Identifiable {
     let substat: SubStat
     let value: Double
     let level: Int
     /// Bar fill fraction: `min(max(value / 100, 0), 1)`.
     let fillFraction: Double
+
+    /// Stable per-sub-stat identity for `ForEach`, so the app layer does not have to
+    /// retroactively conform the core `SubStat` enum to `Hashable`.
+    var id: String {
+        switch substat {
+        case .hunger: return "hunger"
+        case .fatigue: return "fatigue"
+        case .strength: return "strength"
+        }
+    }
 }
 
 /// View model for the HEALTH detail card stack.

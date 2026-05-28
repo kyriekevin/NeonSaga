@@ -309,8 +309,10 @@ private func recoverySnap(_ metrics: HealthMetrics) -> HealthSnapshot {
     HealthSnapshot.derive(from: metrics, at: s2Epoch)
 }
 
+@MainActor
 private func recoveryValue(_ result: RecoveryResult) -> Double {
     if case .scored(let value, _) = result { return value }
+    expect(false, "expected .scored, got .calibrating (monotonic/neutral inputs must score)")
     return -1
 }
 
@@ -417,6 +419,12 @@ group("recovery-score") {
     } else {
         expect(false, "expected .scored (28 finite baseline samples despite NaN/inf entries)")
     }
+    let cleanForDirty = Recovery.score(
+        for: recoverySnap(HealthMetrics(hrvRMSSD: 55, restingHeartRate: 60, sleepEfficiency: 0.8)),
+        hrvBaseline: baselineVaried)
+    expect(
+        dirty == cleanForDirty,
+        "non-finite baseline entries EXCLUDED (not coerced to 0) → same score as clean baseline")
 
     // RB #7 — Recovery strictly increases with today-HRV (above vs below baseline mean 53.5).
     let belowMean = recoveryValue(
@@ -476,6 +484,15 @@ group("recovery-score") {
     if case .scored(let v, let b) = mid {
         expect((34..<67).contains(v) && b == .yellow, "YELLOW ⇔ 34 ≤ value < 67")
     }
+
+    // RB #10b — band threshold rule pinned globally via Recovery.band(for:), independent of
+    // the blend (cutoffs: <34 RED / [34,67) YELLOW / ≥67 GREEN).
+    expect(Recovery.band(for: 0) == .red, "value 0 → RED")
+    expect(Recovery.band(for: 33.9) == .red, "value 33.9 → RED")
+    expect(Recovery.band(for: 34) == .yellow, "value 34 → YELLOW (lower cutoff inclusive)")
+    expect(Recovery.band(for: 66.9) == .yellow, "value 66.9 → YELLOW")
+    expect(Recovery.band(for: 67) == .green, "value 67 → GREEN (lower cutoff inclusive)")
+    expect(Recovery.band(for: 100) == .green, "value 100 → GREEN")
 
     // RB #11 — no double-count: vary workout energy (changes snapshot.fatigue via derive);
     // Recovery reads only HRV/RHR/sleep, so it must be unchanged.

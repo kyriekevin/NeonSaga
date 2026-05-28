@@ -395,6 +395,22 @@ group("recovery-score") {
             hrvBaseline: baselineZeroVar))
     expect(zvLoHRV == zvHiHRV, "zero-variance baseline → HRV term neutral (today-HRV irrelevant)")
 
+    // RB #5c (Gemini PR#4 HIGH) — a NEAR-zero-variance baseline (0 < std < 1.0 ms) is likewise
+    // treated as no HRV-variance signal: today-HRV must not swing the score (else a tiny std
+    // blows the z-score to the clamp rails on measurement noise).
+    let baselineNearZeroVar = Array(repeating: 50.0, count: 27) + [50.5]  // std ≈ 0.09 ms
+    let nzvLoHRV = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(restingHeartRate: 60, hrvRMSSD: 30, sleepEfficiency: 0.8)),
+            hrvBaseline: baselineNearZeroVar))
+    let nzvHiHRV = recoveryValue(
+        Recovery.score(
+            for: recoverySnap(
+                HealthMetrics(restingHeartRate: 60, hrvRMSSD: 90, sleepEfficiency: 0.8)),
+            hrvBaseline: baselineNearZeroVar))
+    expect(nzvLoHRV == nzvHiHRV, "near-zero-variance baseline (std < 1) → HRV term neutral")
+
     // RB #6 — NaN/inf in today RHR/sleep → still finite scored.
     let patho = Recovery.score(
         for: recoverySnap(
@@ -512,6 +528,8 @@ group("recovery-score") {
     expect(Recovery.band(for: 66.9) == .yellow, "value 66.9 → YELLOW")
     expect(Recovery.band(for: 67) == .green, "value 67 → GREEN (lower cutoff inclusive)")
     expect(Recovery.band(for: 100) == .green, "value 100 → GREEN")
+    // RB #10c (Gemini PR#4 MEDIUM) — NaN must not fall through to .green (best state).
+    expect(Recovery.band(for: .nan) == .red, "NaN value → RED (defensive, never .green)")
 
     // RB #11 — no double-count: vary workout energy (changes snapshot.fatigue via derive);
     // Recovery reads only HRV/RHR/sleep, so it must be unchanged.

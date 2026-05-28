@@ -6,8 +6,13 @@ struct SubStatRow: Identifiable {
     let substat: SubStat
     let value: Double
     let level: Int
-    /// Bar fill fraction: `min(max(value / 100, 0), 1)`.
-    let fillFraction: Double
+
+    /// Bar fill fraction `value / 100`, clamped to 0...1. Computed (not stored), and
+    /// guards non-finite values so a NaN/inf can never reach a SwiftUI frame width.
+    var fillFraction: Double {
+        guard value.isFinite else { return 0 }
+        return min(max(value / 100, 0), 1)
+    }
 
     /// Stable per-sub-stat identity for `ForEach`, so the app layer does not have to
     /// retroactively conform the core `SubStat` enum to `Hashable`.
@@ -96,24 +101,9 @@ struct SubStatRow: Identifiable {
         let s = latest.strengthValue
 
         subStats = [
-            SubStatRow(
-                substat: .hunger,
-                value: h,
-                level: Level.of(h),
-                fillFraction: min(max(h / 100, 0), 1)
-            ),
-            SubStatRow(
-                substat: .fatigue,
-                value: f,
-                level: Level.of(f),
-                fillFraction: min(max(f / 100, 0), 1)
-            ),
-            SubStatRow(
-                substat: .strength,
-                value: s,
-                level: Level.of(s),
-                fillFraction: min(max(s / 100, 0), 1)
-            ),
+            SubStatRow(substat: .hunger, value: h, level: Level.of(h)),
+            SubStatRow(substat: .fatigue, value: f, level: Level.of(f)),
+            SubStatRow(substat: .strength, value: s, level: Level.of(s)),
         ]
 
         healthValue = HealthStat.value(hunger: h, fatigue: f, strength: s)

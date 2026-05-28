@@ -8,18 +8,36 @@ struct HealthDetailView: View {
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
-        HealthDetailContentView(store: HealthSnapshotStore(context: modelContext))
+        HealthDetailContainerView(store: HealthSnapshotStore(context: modelContext))
     }
 }
 
-// MARK: - Content (owns the view model)
+// MARK: - Container (instantiates the view model exactly once)
+
+// `State(initialValue:)` evaluates its argument on every `init`, so constructing the
+// view model there re-runs its synchronous store fetch on every parent body pass.
+// Building it lazily in `.onAppear` on an optional `@State` guarantees a single
+// construction + fetch, regardless of how often the parent re-evaluates.
+private struct HealthDetailContainerView: View {
+    let store: HealthSnapshotStore
+    @State private var viewModel: HealthDetailViewModel?
+
+    var body: some View {
+        if let viewModel {
+            HealthDetailContentView(viewModel: viewModel)
+        } else {
+            Color.black
+                .ignoresSafeArea()
+                .preferredColorScheme(.dark)
+                .onAppear { viewModel = HealthDetailViewModel(store: store) }
+        }
+    }
+}
+
+// MARK: - Content (renders the card stack)
 
 private struct HealthDetailContentView: View {
-    @State private var viewModel: HealthDetailViewModel
-
-    init(store: HealthSnapshotStore) {
-        _viewModel = State(initialValue: HealthDetailViewModel(store: store))
-    }
+    let viewModel: HealthDetailViewModel
 
     var body: some View {
         ScrollView {

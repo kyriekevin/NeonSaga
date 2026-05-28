@@ -24,6 +24,7 @@ See also `CLAUDE.md` §1.2 (red+green PR-level discipline) and §1.9 (verificati
 
 - One-off probes / throwaway scripts (e.g., Stage 1 killer-edge spike per ROADMAP §2)
 - Generated boilerplate (xcodegen output, asset catalogs)
+- One-time genesis bootstrap (custom test-runner harness, minimal `@main` app shell, SwiftPM/XcodeGen skeleton — can't be test-driven before they exist; first real red/green lands with the first Stage 1 feature)
 - Pure config (project.yml, .entitlements, Info.plist properties)
 - Pure documentation (Markdown)
 

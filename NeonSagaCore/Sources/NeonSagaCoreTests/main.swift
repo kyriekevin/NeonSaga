@@ -168,6 +168,18 @@ group("health-snapshot-derive") {
         empty.hunger.value.isFinite && (0...100).contains(empty.hunger.value),
         "all-nil HUNGER finite in 0...100")
 
+    // RB #14 (Gemini PR#3 G1) — missing inputs are EXCLUDED from the FATIGUE average,
+    // not counted as 0; all-missing → neutral 50 (a missing sample ≠ worst state).
+    expect(empty.fatigue.value == 50.0, "all-missing FATIGUE → neutral 50, not 0")
+    let twoPresent = HealthSnapshot.derive(
+        from: HealthMetrics(hrvRMSSD: 80, sleepEfficiency: 0.8), at: s2Epoch)
+    let threeZeroWk = HealthSnapshot.derive(
+        from: HealthMetrics(
+            hrvRMSSD: 80, sleepEfficiency: 0.8, activeWorkoutEnergyKilocalories: 0), at: s2Epoch)
+    expect(
+        twoPresent.fatigue.value > threeZeroWk.fatigue.value,
+        "absent workout excluded from FATIGUE avg, not counted as a 0 reading")
+
     // RB #4 — pathological inputs (NaN / inf / huge / negative) → clamped finite.
     let nan = HealthSnapshot.derive(
         from: HealthMetrics(

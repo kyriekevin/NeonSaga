@@ -33,6 +33,7 @@ private struct HealthDetailContentView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
+        .onAppear { viewModel.refresh() }
     }
 }
 
@@ -75,19 +76,11 @@ private struct RecoveryCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(String(format: "%.0f", value))
                     .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(bandColor(band))
+                    .foregroundStyle(band.color)
                 Text(bandLabel(band))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(bandColor(band))
+                    .foregroundStyle(band.color)
             }
-        }
-    }
-
-    private func bandColor(_ band: RecoveryBand) -> Color {
-        switch band {
-        case .red: return Color(red: 1, green: 0.2, blue: 0.4)
-        case .yellow: return Color.yellow
-        case .green: return Color.cyan
         }
     }
 
@@ -107,11 +100,7 @@ private struct RecoveryRing: View {
 
     private var ringColor: Color {
         guard case .scored(_, let band) = viewModel.recovery else { return .gray }
-        switch band {
-        case .red: return Color(red: 1, green: 0.2, blue: 0.4)
-        case .yellow: return Color.yellow
-        case .green: return Color.cyan
-        }
+        return band.color
     }
 
     var body: some View {
@@ -272,6 +261,19 @@ private struct SubStatBarRow: View {
         case .hunger: return "HUNGER"
         case .fatigue: return "FATIGUE"
         case .strength: return "STRENGTH"
+        }
+    }
+}
+
+// MARK: - Band → HUD color
+
+extension RecoveryBand {
+    /// Neon HUD accent color for each recovery band.
+    var color: Color {
+        switch self {
+        case .red: return Color(red: 1, green: 0.2, blue: 0.4)
+        case .yellow: return .yellow
+        case .green: return .cyan
         }
     }
 }

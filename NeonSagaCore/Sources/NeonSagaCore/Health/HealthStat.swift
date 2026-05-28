@@ -9,12 +9,12 @@ public enum HealthStat {
     /// HEALTH LV = `floor` of the average of the three sub-stat LVs.
     ///
     /// This is NOT `Level.of(average of raw values)` — each sub-stat LV is
-    /// computed independently first, then the average is floored (PRODUCT §7).
+    /// computed independently first, then averaged (PRODUCT §7). Integer
+    /// division floors here because the LV sum is always positive (each LV ≥ 1).
     public static func level(hunger: Double, fatigue: Double, strength: Double) -> Int {
         let hungerLv = Level.of(hunger)
         let fatigueLv = Level.of(fatigue)
         let strengthLv = Level.of(strength)
-        let avgLv = Double(hungerLv + fatigueLv + strengthLv) / 3.0
-        return Int(avgLv.rounded(.down))
+        return (hungerLv + fatigueLv + strengthLv) / 3
     }
 }

@@ -121,21 +121,26 @@ state/IO wiring is app-layer.
 are daily inputs, `HealthSnapshot.healthValue` / `healthLevel` (today they
 aggregate the snapshot's sub-stats) would aggregate *daily inputs*, not the
 accumulated character stats — so they must **not** drive the HEALTH display or
-level-up detection. The CONTRACT must make this unambiguous: either move the
-daily-input carrier out of `HealthSnapshot` / drop `healthValue`+`healthLevel`
-from it, or keep them but document loudly that display + `LevelUp.detect` read
-the **record's accumulated** values only (which is already how
+level-up detection. The CONTRACT must enforce this **structurally, at the
+compiler level** (per Gemini): **drop `healthValue` + `healthLevel` from the
+daily-input carrier, or rename the carrier entirely** (e.g. `DailyHealthInput`)
+— documentation alone is insufficient to prevent accidental misuse, so the
+"keep them + document loudly" escape hatch is rejected. Display +
+`LevelUp.detect` read the **record's accumulated** values only (already how
 `HealthDetailViewModel` computes HEALTH today — it reads `latest.*Value`, not
-`snapshot.healthValue`). Pick one explicitly; do not leave two value surfaces
-that look interchangeable.
+`snapshot.healthValue`). Do not leave two value surfaces that look
+interchangeable.
 
 **Write-path idempotence (required, per Codex 2a).** Accumulation makes the
 write path order- and count-sensitive: today's `deriveAndStore` inserts a new
 record on every call, so two calls in one day would double-accumulate. The
-CONTRACT must choose ONE policy and test it: (a) upsert one record per stat-day
-and re-derive the affected suffix on out-of-order / back-filled inputs, or
-(b) reject duplicate-day / out-of-order / back-filled inputs. Tests must cover
-duplicate `capturedAt`, same-day re-write, and back-fill.
+CONTRACT must implement **policy (a): upsert one record per stat-day and
+re-derive the affected suffix on out-of-order / back-filled inputs** (per
+Gemini). Policy (b) — rejecting duplicate-day / out-of-order / back-filled
+inputs — is rejected: Apple Health back-fills and late-syncs sleep/workout
+data as a matter of course, so rejecting would lose data or produce wrong
+stats. Tests must cover duplicate `capturedAt`, same-day re-write, and
+back-fill (with suffix re-derive).
 
 **Explicitly NOT decided here:** the exact half-life constants (CONTRACT-level,
 property-tested not pinned); renaming the FATIGUE/HUNGER sub-stats (see
@@ -241,11 +246,15 @@ Neutral/open); any change to Recovery, Strain, LV math, or the CORE-root work.
   primitive applies to **both** STRENGTH and FATIGUE (it is the same one-line
   function — accumulation itself is cheap), so both keep accumulated, stable LV
   crossings and ROADMAP §2's "any HEALTH sub-stat" level-up promise stays
-  intact. What is deferrable under deadline pressure is the **FATIGUE
-  daily-input refinement** (fall back from the baseline-relative HRV reading to
-  a simpler absolute-HRV reading) and **half-life tuning**. Non-cuttable: the
-  FATIGUE-source contradiction fix and EWMA accumulation for STRENGTH **and**
-  FATIGUE.
+  intact. The FATIGUE daily input stays **baseline-relative** even under Plan B:
+  it reuses the already-implemented `recentHRVBaseline` + Recovery HRV-term, so
+  it is ~free — it was never the costly part, and an absolute-HRV fallback would
+  be *worse* (HRV varies by orders of magnitude, so an un-normalized 0–100 map
+  is uncalibrated — per Gemini) **and** more code to write. What is genuinely
+  deferrable under deadline pressure is only **half-life tuning** and the
+  **back-fill suffix re-derive sophistication** (same-day upsert idempotence
+  still ships). Non-cuttable: the FATIGUE-source contradiction fix and EWMA
+  accumulation for STRENGTH **and** FATIGUE.
 - **Schedule impact (per Codex 5b):** `docs/SCHEDULE.md` has no buffer week and
   names 2026-06-17 as the Stage 1 deadline. S6b is absorbed into the Stage 1
   W2 slice budget (it sits between S6 and S7, both already in W2/W3); it does
@@ -267,10 +276,10 @@ Neutral/open); any change to Recovery, Strain, LV math, or the CORE-root work.
   diff review → verify-full → PR).
 - The CONTRACT pins: the EWMA primitive's signature + purity, the per-stat
   daily-input functions, half-life constants, the store accumulation order
-  (strict `capturedAt` ascending) + cold-start, **the write-path idempotence
-  policy (Decision/Architecture above — upsert-and-re-derive vs reject)**, **the
-  display/level-up value-source boundary (record's accumulated values, not
-  `snapshot.healthValue`)**, and the RED test list (monotone toward input,
+  (strict `capturedAt` ascending) + cold-start, **the mandated upsert +
+  suffix-re-derive write path (policy (a))**, **the structural type boundary
+  (`healthValue`/`healthLevel` removed from or renamed off the daily-input
+  carrier)**, and the RED test list (monotone toward input,
   bounded 0–100, decays on rest, cold-start = input, ordering-dependence,
   duplicate-`capturedAt` / same-day re-write / back-fill, FATIGUE invariant to
   sleep/workout, STRENGTH invariant to non-workout signals).
@@ -293,5 +302,16 @@ Neutral/open); any change to Recovery, Strain, LV math, or the CORE-root work.
   2026-06-10 (2026-06-11 = Day-14). Fixed: trigger pinned to the Day-13
   go/no-go review (2026-06-10), co-located with — distinct from — the
   killer-edge-spike gate. Round 3 on this one-line date fix not warranted.
+- Gemini review (auto, on PR #11): 3 MEDIUM, all verified legit + applied.
+  (1) type boundary → mandate structural removal/rename of
+  `healthValue`/`healthLevel` from the daily-input carrier (reject the
+  "document only" escape hatch); (2) write-path → mandate policy (a)
+  upsert-and-re-derive, drop the "reject" option (HealthKit back-fills/
+  late-syncs are routine); (3) Plan B → do **not** fall back to absolute HRV
+  (uncalibrated) — kept baseline-relative (it reuses existing infra, ~free),
+  deferring only half-life tuning + back-fill suffix-re-derive. Finding 3
+  resolved more thoroughly than Gemini's "static/population baseline"
+  suggestion. PR #10's lone Gemini finding (file count 10→11) was already
+  fixed by the Codex round-1 pass (stale comment on `bc6f745`).
 - Lead approval: <pending>
 - Owner approval: <pending>

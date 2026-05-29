@@ -51,8 +51,20 @@ import SwiftData
         // Step 2: compute the stat-day label (y,m,d) of `date` in `timeZone`.
         let writeLabel = statDayLabel(of: date, in: timeZone)
 
-        // Step 3: upsert — find an existing record whose stat-day label matches.
-        let existing = try allRecords().first { rec in
+        // Step 3: upsert — find an existing record on the same stat-day. Scan only a
+        // BOUNDED window around `date`, not the whole table (Gemini PR#13): a record
+        // sharing the local date label, even in another capture zone, has its absolute
+        // `capturedAt` within |zoneOffsetDiff| + 24h of `date`. Real zone offsets span
+        // UTC-12…+14 (≤ 26h), so |Δ| ≤ 50h; a ±2.5-day (60h) window covers it with margin
+        // while fetching only a handful of rows regardless of history size.
+        let windowStart = date.addingTimeInterval(-2.5 * 86_400)
+        let windowEnd = date.addingTimeInterval(2.5 * 86_400)
+        let inWindow = #Predicate<HealthSnapshotRecord> {
+            $0.capturedAt >= windowStart && $0.capturedAt <= windowEnd
+        }
+        let candidates = try context.fetch(
+            FetchDescriptor<HealthSnapshotRecord>(predicate: inWindow))
+        let existing = candidates.first { rec in
             let zone =
                 rec.captureTimeZoneIdentifier.flatMap { TimeZone(identifier: $0) }
                 ?? calendar.timeZone
@@ -80,13 +92,13 @@ import SwiftData
             affected = rec
         }
 
-        // Re-derive the full accumulated chain (index 0, ascending capturedAt) over the
-        // pending insert/upsert, then persist raw + accumulated in a SINGLE save so there is
-        // no partial-write window (Codex 2b). On failure, roll back so the context holds no
+        // Re-derive the affected record + its suffix (records before it are already
+        // correct), then persist raw + accumulated in a SINGLE save so there is no
+        // partial-write window (Codex 2b). On failure, roll back so the context holds no
         // dangling uncommitted mutations (an insert is discarded; an upsert's raw overwrite
         // reverts) — leaving a consistent committed state.
         do {
-            try reAccumulateAll(affected: affected)
+            try reAccumulateSuffix(from: affected)
             try context.save()
         } catch {
             context.rollback()
@@ -115,12 +127,22 @@ import SwiftData
             activeWorkoutEnergyKilocalories: rec.activeWorkoutEnergyKilocalories)
     }
 
-    /// Re-derives accumulated values for every record from index 0 to the end, in
-    /// ascending `capturedAt` order. Rebuilds the full chain so back-fills are correct.
-    private func reAccumulateAll(affected _: HealthSnapshotRecord) throws {
+    /// Re-derives accumulated values for `affected` and every LATER record (the suffix in
+    /// ascending `capturedAt` order). Records BEFORE `affected` are already correct, so the
+    /// write path is O(K) over the suffix (K = 1 for the common append) rather than O(N) over
+    /// all history (Gemini PR#13). Back-fill is handled: an out-of-order insert is the suffix
+    /// head, so every later record re-derives against it (both the EWMA chain and its HRV
+    /// baseline window). The single record immediately before `affected` seeds the chain.
+    private func reAccumulateSuffix(from affected: HealthSnapshotRecord) throws {
+        // Fetch the full ordered list ONCE — `allRecords()` reflects the pending in-memory
+        // insert/upsert (a `#Predicate` fetch on the just-mutated, unsaved `capturedAt`
+        // does NOT, and silently mis-buckets the affected record). Re-derive only `affected`
+        // and its suffix; the prefix is already correct, so only O(K) HRV-baseline queries
+        // run (K = 1 for the common append) instead of one per record (Gemini PR#13).
         let records = try allRecords()
-        var prior: HealthSnapshotRecord? = nil
-        for rec in records {
+        guard let start = records.firstIndex(where: { $0 === affected }) else { return }
+        var prior: HealthSnapshotRecord? = start > 0 ? records[start - 1] : nil
+        for rec in records[start...] {
             let input = try DailyHealthInput.derive(
                 from: metricsFrom(rec),
                 hrvBaseline: recentHRVBaseline(before: rec.capturedAt),

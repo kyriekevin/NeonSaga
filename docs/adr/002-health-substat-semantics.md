@@ -84,6 +84,12 @@ CONTRACT-level detail for the implementing slice.
    where `retention ∈ (0,1)` derives from a per-stat half-life (Stage-1
    tunable constant). Cold start (no previous record) seeds
    `accumulated = dailyInput`.
+   **Time-aware decay (per Gemini):** the EWMA must NOT assume consecutive
+   daily snapshots. `retention` is a *per-day* factor; the value actually
+   applied is `retention^Δt`, where `Δt` is the elapsed time (in days, possibly
+   fractional) since the previous record — so a multi-day gap (device unworn /
+   not synced) decays the stat by the full elapsed time, not a single step.
+   With the half-life framing this is exactly `0.5^(Δt / halfLifeDays)`.
 
 3. **Daily inputs** feeding the EWMA:
    - **STRENGTH** ← normalized workout energy (metrics-only; today's load).
@@ -140,7 +146,12 @@ Gemini). Policy (b) — rejecting duplicate-day / out-of-order / back-filled
 inputs — is rejected: Apple Health back-fills and late-syncs sleep/workout
 data as a matter of course, so rejecting would lose data or produce wrong
 stats. Tests must cover duplicate `capturedAt`, same-day re-write, and
-back-fill (with suffix re-derive).
+back-fill (with suffix re-derive). **"stat-day" definition (per Gemini):**
+because `capturedAt` is an absolute `Date`, same-day grouping must be evaluated
+against the **user's local calendar / time zone at capture**, not UTC — else
+travel across time zones or a DST transition mis-groups records (duplicate or
+merged days). The owner is SGT (UTC+8, no DST) but travels, so local-at-capture
+is the travel-robust choice; the CONTRACT pins this.
 
 **Explicitly NOT decided here:** the exact half-life constants (CONTRACT-level,
 property-tested not pinned); renaming the FATIGUE/HUNGER sub-stats (see
@@ -274,15 +285,18 @@ Neutral/open); any change to Recovery, Strain, LV math, or the CORE-root work.
 - CONTRACT location (when worker dispatched): worktree at Stage 1 S6b kickoff,
   reviewed per `CLAUDE.md` §1.1 (1b-contract → 1b-tests → worker GREEN → 2b
   diff review → verify-full → PR).
-- The CONTRACT pins: the EWMA primitive's signature + purity, the per-stat
-  daily-input functions, half-life constants, the store accumulation order
-  (strict `capturedAt` ascending) + cold-start, **the mandated upsert +
-  suffix-re-derive write path (policy (a))**, **the structural type boundary
-  (`healthValue`/`healthLevel` removed from or renamed off the daily-input
-  carrier)**, and the RED test list (monotone toward input,
-  bounded 0–100, decays on rest, cold-start = input, ordering-dependence,
-  duplicate-`capturedAt` / same-day re-write / back-fill, FATIGUE invariant to
-  sleep/workout, STRENGTH invariant to non-workout signals).
+- The CONTRACT pins: the EWMA primitive's signature + purity, **time-aware
+  decay (`retention^Δt` over elapsed days)**, the per-stat daily-input
+  functions, half-life constants, the store accumulation order (strict
+  `capturedAt` ascending) + cold-start, **the mandated upsert + suffix-re-derive
+  write path (policy (a))**, **the local-calendar/time-zone "stat-day"
+  boundary**, **the structural type boundary (`healthValue`/`healthLevel`
+  removed from or renamed off the daily-input carrier)**, and the RED test list
+  (monotone toward input, bounded 0–100, decays on rest, **multi-day-gap decays
+  more than one step**, cold-start = input, ordering-dependence,
+  duplicate-`capturedAt` / same-day re-write / back-fill, **stat-day grouping
+  across a time-zone change**, FATIGUE invariant to sleep/workout, STRENGTH
+  invariant to non-workout signals).
 
 ## Review
 
@@ -302,7 +316,13 @@ Neutral/open); any change to Recovery, Strain, LV math, or the CORE-root work.
   2026-06-10 (2026-06-11 = Day-14). Fixed: trigger pinned to the Day-13
   go/no-go review (2026-06-10), co-located with — distinct from — the
   killer-edge-spike gate. Round 3 on this one-line date fix not warranted.
-- Gemini review (auto, on PR #11): 3 MEDIUM, all verified legit + applied.
+- Gemini review round 2 (auto, on revised PR #11 `57553dd`): 2 MEDIUM, both
+  verified legit + applied (the original 3 were NOT re-raised — confirmed
+  resolved). (A) EWMA must be **time-aware** (`retention^Δt`) so multi-day gaps
+  decay by elapsed time, not one step; (B) **"stat-day" grouped by the user's
+  local calendar/time zone** at capture (travel/DST-robust), not UTC. Both
+  folded into Decision 2 / the write-path requirement / CONTRACT pins + tests.
+- Gemini review round 1 (auto, on PR #11): 3 MEDIUM, all verified legit + applied.
   (1) type boundary → mandate structural removal/rename of
   `healthValue`/`healthLevel` from the daily-input carrier (reject the
   "document only" escape hatch); (2) write-path → mandate policy (a)

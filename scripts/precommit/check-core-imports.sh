@@ -9,11 +9,20 @@
 set -u
 
 modules='SwiftUI|SwiftData|UIKit|HealthKit|CoreLocation'
+
+# Match an `import` declaration whose MODULE position is a forbidden module:
+#   ^  optional leading space
+#      zero+ import attributes:  @testable / @preconcurrency / @_implementationOnly / @objc(Foo)
+#      `import`
+#      optional import kind:     class / struct / enum / protocol / func / typealias / var
+#      the forbidden module, followed by space, `.` (submodule import), or EOL.
+# Requiring the module in MODULE position means a trailing comment like
+# `import Foundation // SwiftUI` does NOT false-positive (BSD-grep ERE, macOS).
+re='^[[:space:]]*(@[A-Za-z_][A-Za-z0-9_]*(\([^)]*\))?[[:space:]]+)*import[[:space:]]+((class|struct|enum|protocol|func|typealias|var)[[:space:]]+)?('"$modules"')([[:space:].]|$)'
+
 status=0
 for f in "$@"; do
-  # `import` statements that reference a forbidden module as a whole word.
-  # Two-stage grep avoids \b / \s portability gaps in BSD grep (macOS).
-  matches=$(grep -nE '^[[:space:]]*import[[:space:]]+' "$f" 2>/dev/null | grep -Ew "$modules")
+  matches=$(grep -nE "$re" -- "$f" 2>/dev/null)
   if [ -n "$matches" ]; then
     echo "✗ $f — forbidden import (NeonSagaCore must stay pure Swift, CLAUDE.md §3):"
     printf '%s\n' "$matches" | sed 's/^/      /'

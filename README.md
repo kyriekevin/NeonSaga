@@ -2,10 +2,15 @@
 
 Personal-use iOS RPG character sheet, built under strict 规范.
 
-> **Genesis state.** Only 规范 docs and skeleton folders. No code, no
-> `make` targets yet. See [`docs/STATUS.md`](docs/STATUS.md) for the
-> pending genesis tasks and [`docs/ROADMAP.md`](docs/ROADMAP.md) for the
-> 4-stage plan that begins after owner approval.
+> **Stage 1 in progress (HEALTH domain).** Slices S1–S6 are merged: the
+> pure-Swift HEALTH core (LV math, `HealthSnapshot`, Recovery 0–100, Strain
+> 0–21), SwiftData persistence (`HealthSnapshotRecord` + `HealthSnapshotStore`),
+> and an installable HEALTH detail surface. `make verify-full` is green
+> (135 core / 23 iOS tests). No real HealthKit data yet — the
+> `HKHealthStore`-backed reader is deferred to S5b (on-device); scoring runs
+> on synthetic/in-memory data until then. See
+> [`docs/STATUS.md`](docs/STATUS.md) for the shipped state and
+> [`docs/ROADMAP.md`](docs/ROADMAP.md) for the 4-stage plan.
 
 ## Where to start
 
@@ -20,9 +25,7 @@ Personal-use iOS RPG character sheet, built under strict 规范.
 - [`docs/templates/CONTRACT.md`](docs/templates/CONTRACT.md) — stage / feature CONTRACT (process artifact, not committed to PR)
 - [`docs/adr/000-template.md`](docs/adr/000-template.md) — Architectural Decision Record
 
-## Quick commands (post-genesis)
-
-Once `Makefile` is wired (see `docs/STATUS.md` pending genesis tasks):
+## Quick commands
 
 ```bash
 make verify          # Hooks + core build + core tests (CLT-only)

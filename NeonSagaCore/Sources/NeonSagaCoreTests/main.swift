@@ -187,7 +187,8 @@ group("daily-health-input") {
     let hiHRV = DailyHealthInput.derive(
         from: HealthMetrics(hrvRMSSD: 66), hrvBaseline: baseline, at: s2Epoch)
     expect(loHRV.fatigue < hiHRV.fatigue, "FATIGUE strictly increases with today-HRV")
-    expect(loHRV.fatigue < 50 && hiHRV.fatigue > 50, "FATIGUE below/above baseline mean reads </> 50")
+    expect(
+        loHRV.fatigue < 50 && hiHRV.fatigue > 50, "FATIGUE below/above baseline mean reads </> 50")
 
     // FATIGUE invariant to sleep AND workout (ADR-002 Decision 1: neither feeds FATIGUE anymore).
     // REPLACES the old S2 RB#6/#7 which asserted the opposite — the shipped spec violation.
@@ -242,14 +243,16 @@ group("daily-health-input") {
     // RB #13 — STRENGTH depends ONLY on workout energy: invariant to each non-workout input
     // varied INDIVIDUALLY, and to the HRV baseline.
     let sBase = DailyHealthInput.derive(from: fBaseM, hrvBaseline: baseline, at: s2Epoch).strength
-    let sVaryHRV = DailyHealthInput.derive(
+    let varyHRVInput = DailyHealthInput.derive(
         from: HealthMetrics(
             restingHeartRate: 60, hrvRMSSD: 90, sleepEfficiency: 0.5,
-            activeWorkoutEnergyKilocalories: 300), hrvBaseline: baseline, at: s2Epoch).strength
-    let sVaryRHR = DailyHealthInput.derive(
+            activeWorkoutEnergyKilocalories: 300), hrvBaseline: baseline, at: s2Epoch)
+    let sVaryHRV = varyHRVInput.strength
+    let varyRHRInput = DailyHealthInput.derive(
         from: HealthMetrics(
             restingHeartRate: 40, hrvRMSSD: 55, sleepEfficiency: 0.5,
-            activeWorkoutEnergyKilocalories: 300), hrvBaseline: baseline, at: s2Epoch).strength
+            activeWorkoutEnergyKilocalories: 300), hrvBaseline: baseline, at: s2Epoch)
+    let sVaryRHR = varyRHRInput.strength
     let sVarySleep = DailyHealthInput.derive(from: fVarySleep, hrvBaseline: baseline, at: s2Epoch)
         .strength
     let sNoBaseline = DailyHealthInput.derive(from: fBaseM, hrvBaseline: [], at: s2Epoch).strength
@@ -263,10 +266,10 @@ group("daily-health-input") {
     expect(nanAll.hunger == 50.0, "HUNGER == 50.0 under NaN metrics")
     expect(negWk.hunger == 50.0, "HUNGER == 50.0 under negative metrics")
     expect(infWk.hunger == 50.0, "HUNGER == 50.0 under infinite metrics")
-    expect(
-        DailyHealthInput.derive(
-            from: HealthMetrics(activeWorkoutEnergyKilocalories: 300), hrvBaseline: baseline,
-            at: s2Epoch).hunger == 50.0, "HUNGER == 50.0 regardless of workout")
+    let workoutInput = DailyHealthInput.derive(
+        from: HealthMetrics(activeWorkoutEnergyKilocalories: 300), hrvBaseline: baseline,
+        at: s2Epoch)
+    expect(workoutInput.hunger == 50.0, "HUNGER == 50.0 regardless of workout")
 }
 
 // RB #12 — async seam: source → latestMetrics() → DailyHealthInput.derive == direct derive.

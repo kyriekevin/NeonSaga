@@ -161,7 +161,8 @@ final class HealthSnapshotStoreTests: XCTestCase {
         XCTAssertEqual(rec.hrvRMSSD, 50)
         XCTAssertEqual(rec.sleepEfficiency, 0.95)
         XCTAssertEqual(rec.activeWorkoutEnergyKilocalories, 1200)
-        XCTAssertNotNil(rec.captureTimeZoneIdentifier, "capture zone is stamped for stat-day grouping")
+        XCTAssertNotNil(
+            rec.captureTimeZoneIdentifier, "capture zone is stamped for stat-day grouping")
     }
 
     @MainActor

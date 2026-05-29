@@ -20,7 +20,7 @@ final class HealthAccumulationStoreTests: XCTestCase {
     }
 
     private let utc = TimeZone(identifier: "UTC")!
-    private let sgt = TimeZone(identifier: "Asia/Singapore")!      // UTC+8, no DST
+    private let sgt = TimeZone(identifier: "Asia/Singapore")!  // UTC+8, no DST
     private let la = TimeZone(identifier: "America/Los_Angeles")!  // UTC-7/-8, observes DST
 
     private func cal(_ zone: TimeZone) -> Calendar {
@@ -46,7 +46,8 @@ final class HealthAccumulationStoreTests: XCTestCase {
     private func write(
         _ store: HealthSnapshotStore, _ metrics: HealthMetrics, at when: Date, in zone: TimeZone
     ) async throws -> HealthSnapshotRecord {
-        try await store.deriveAndStore(from: StubSource(metrics: metrics), at: when, capturedIn: zone)
+        try await store.deriveAndStore(
+            from: StubSource(metrics: metrics), at: when, capturedIn: zone)
     }
 
     // MARK: - Accumulation values (load-bearing once EWMA + DailyHealthInput land)
@@ -94,7 +95,8 @@ final class HealthAccumulationStoreTests: XCTestCase {
                 store, HealthMetrics(activeWorkoutEnergyKilocalories: 0), at: date(utc, 2026, 6, d),
                 in: utc)
             XCTAssertLessThan(r.strengthValue, prev, "STRENGTH strictly decays on a rest day")
-            XCTAssertGreaterThan(r.strengthValue, 0, "STRENGTH does not crater to 0 in one rest day")
+            XCTAssertGreaterThan(
+                r.strengthValue, 0, "STRENGTH does not crater to 0 in one rest day")
             prev = r.strengthValue
         }
     }
@@ -125,15 +127,18 @@ final class HealthAccumulationStoreTests: XCTestCase {
             let store = try makeStore(utc)
             for i in 1...14 {
                 let hrv: Double = (i % 2 == 0) ? 60 : 40  // mean 50, std > 1
-                _ = try await write(store, HealthMetrics(hrvRMSSD: hrv), at: date(utc, 2026, 6, i), in: utc)
+                _ = try await write(
+                    store, HealthMetrics(hrvRMSSD: hrv), at: date(utc, 2026, 6, i), in: utc)
             }
             return try await write(store, testDay, at: date(utc, 2026, 6, 15), in: utc).fatigueValue
         }
         let lowLoad = try await fatigueOnTestDay(
             HealthMetrics(hrvRMSSD: 30, sleepEfficiency: 0.2, activeWorkoutEnergyKilocalories: 0))
         let highLoad = try await fatigueOnTestDay(
-            HealthMetrics(hrvRMSSD: 30, sleepEfficiency: 0.95, activeWorkoutEnergyKilocalories: 600))
-        XCTAssertEqual(lowLoad, highLoad, accuracy: 1e-9, "FATIGUE ignores sleep + workout at the store")
+            HealthMetrics(
+                hrvRMSSD: 30, sleepEfficiency: 0.95, activeWorkoutEnergyKilocalories: 600))
+        XCTAssertEqual(
+            lowLoad, highLoad, accuracy: 1e-9, "FATIGUE ignores sleep + workout at the store")
         XCTAssertLessThan(lowLoad, 50, "poor HRV (below baseline mean) → FATIGUE below neutral 50")
     }
 
@@ -142,10 +147,13 @@ final class HealthAccumulationStoreTests: XCTestCase {
         let store = try makeStore(utc)
         for i in 1...14 {
             let hrv: Double = (i % 2 == 0) ? 60 : 40
-            _ = try await write(store, HealthMetrics(hrvRMSSD: hrv), at: date(utc, 2026, 6, i), in: utc)
+            _ = try await write(
+                store, HealthMetrics(hrvRMSSD: hrv), at: date(utc, 2026, 6, i), in: utc)
         }
-        let r15 = try await write(store, HealthMetrics(hrvRMSSD: 35), at: date(utc, 2026, 6, 15), in: utc)
-        let r16 = try await write(store, HealthMetrics(hrvRMSSD: 35), at: date(utc, 2026, 6, 16), in: utc)
+        let r15 = try await write(
+            store, HealthMetrics(hrvRMSSD: 35), at: date(utc, 2026, 6, 15), in: utc)
+        let r16 = try await write(
+            store, HealthMetrics(hrvRMSSD: 35), at: date(utc, 2026, 6, 16), in: utc)
         // Day-16 FATIGUE = one time-aware EWMA step from day-15's accumulated value toward
         // day-16's baseline-relative HRV reading (using the store's own baseline + primitives).
         let baseline16 = try store.recentHRVBaseline(before: date(utc, 2026, 6, 16))
@@ -171,19 +179,19 @@ final class HealthAccumulationStoreTests: XCTestCase {
             store, HealthMetrics(activeWorkoutEnergyKilocalories: 0), at: date(utc, 2026, 6, 2, 9),
             in: utc)
         let evening = try await write(
-            store, HealthMetrics(activeWorkoutEnergyKilocalories: 300), at: date(utc, 2026, 6, 2, 21),
-            in: utc)
+            store, HealthMetrics(activeWorkoutEnergyKilocalories: 300),
+            at: date(utc, 2026, 6, 2, 21), in: utc)
 
         let all = try store.allRecords()
         XCTAssertEqual(all.count, 2, "day 1 + the single upserted day-2 record")
         XCTAssertEqual(
             evening.activeWorkoutEnergyKilocalories, 300, "latest same-day raw metrics retained")
         let elapsed = evening.capturedAt.timeIntervalSince(day1.capturedAt) / 86_400.0
+        let eveningInput = DailyHealthInput.derive(
+            from: HealthMetrics(activeWorkoutEnergyKilocalories: 300), hrvBaseline: [],
+            at: evening.capturedAt)
         let expected = EWMA.accumulate(
-            previous: day1.strengthValue,
-            dailyInput: DailyHealthInput.derive(
-                from: HealthMetrics(activeWorkoutEnergyKilocalories: 300), hrvBaseline: [],
-                at: evening.capturedAt).strength,
+            previous: day1.strengthValue, dailyInput: eveningInput.strength,
             elapsedDays: elapsed, halfLifeDays: HealthAccumulation.strengthHalfLifeDays)
         XCTAssertEqual(
             evening.strengthValue, expected, accuracy: 1e-9,
@@ -215,8 +223,10 @@ final class HealthAccumulationStoreTests: XCTestCase {
         let store = try makeStore(utc)
         // 2026-06-01 10:00 in SGT and 2026-06-01 10:00 in LA — same (y,m,d) LABEL in each
         // zone, different absolute instants. ADR-002: same label ⇒ ONE record.
-        _ = try await write(store, HealthMetrics(hrvRMSSD: 50), at: date(sgt, 2026, 6, 1, 10), in: sgt)
-        _ = try await write(store, HealthMetrics(hrvRMSSD: 60), at: date(la, 2026, 6, 1, 10), in: la)
+        _ = try await write(
+            store, HealthMetrics(hrvRMSSD: 50), at: date(sgt, 2026, 6, 1, 10), in: sgt)
+        _ = try await write(
+            store, HealthMetrics(hrvRMSSD: 60), at: date(la, 2026, 6, 1, 10), in: la)
         XCTAssertEqual(
             try store.allRecords().count, 1, "same (y,m,d) label across capture zones → one record")
     }
@@ -241,7 +251,8 @@ final class HealthAccumulationStoreTests: XCTestCase {
         // skipped hour share the (y,m,d) label 03-08 → ONE record. 01:00 (PST) and 23:00
         // (PDT) are both real local times (avoids the nonexistent 02:00–02:59 gap).
         _ = try await write(store, HealthMetrics(hrvRMSSD: 50), at: date(la, 2026, 3, 8, 1), in: la)
-        _ = try await write(store, HealthMetrics(hrvRMSSD: 60), at: date(la, 2026, 3, 8, 23), in: la)
+        _ = try await write(
+            store, HealthMetrics(hrvRMSSD: 60), at: date(la, 2026, 3, 8, 23), in: la)
         XCTAssertEqual(
             try store.allRecords().count, 1, "same LA local date across the DST jump → one record")
     }
@@ -252,7 +263,8 @@ final class HealthAccumulationStoreTests: XCTestCase {
         // Straddle the same 2026-03-08 spring-forward but on DIFFERENT local dates:
         // 2026-03-07 23:00 (PST, label 03-07) and 2026-03-08 03:00 (PDT, label 03-08;
         // 03:00 is the first valid time after the 02:00→03:00 jump) → TWO records.
-        _ = try await write(store, HealthMetrics(hrvRMSSD: 50), at: date(la, 2026, 3, 7, 23), in: la)
+        _ = try await write(
+            store, HealthMetrics(hrvRMSSD: 50), at: date(la, 2026, 3, 7, 23), in: la)
         _ = try await write(store, HealthMetrics(hrvRMSSD: 60), at: date(la, 2026, 3, 8, 3), in: la)
         XCTAssertEqual(
             try store.allRecords().count, 2,
@@ -277,7 +289,8 @@ final class HealthAccumulationStoreTests: XCTestCase {
 
         // Day-3 accumulated STRENGTH must equal a clean forward chain day1→day2→day3.
         let hl = HealthAccumulation.strengthHalfLifeDays
-        let s1 = DailyHealthInput.derive(from: m1, hrvBaseline: [], at: day1).strength  // cold start
+        // cold start
+        let s1 = DailyHealthInput.derive(from: m1, hrvBaseline: [], at: day1).strength
         let s2 = EWMA.accumulate(
             previous: s1,
             dailyInput: DailyHealthInput.derive(from: m2, hrvBaseline: [], at: day2).strength,

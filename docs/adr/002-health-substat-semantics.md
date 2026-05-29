@@ -249,10 +249,13 @@ Neutral/open); any change to Recovery, Strain, LV math, or the CORE-root work.
 - **Schedule impact (per Codex 5b):** `docs/SCHEDULE.md` has no buffer week and
   names 2026-06-17 as the Stage 1 deadline. S6b is absorbed into the Stage 1
   W2 slice budget (it sits between S6 and S7, both already in W2/W3); it does
-  not displace a named milestone. Trigger for the Plan-B degrade above: if S6b
-  is not GREEN + merged by **2026-06-11** (the Day-13 go/no-go gate already in
-  ROADMAP §2), fall back to the degraded daily-input + defer tuning rather than
-  slip the deadline.
+  not displace a named milestone. Trigger for the Plan-B degrade above:
+  evaluated at the **Day-13 go/no-go review (2026-06-10)** that ROADMAP §2 +
+  SCHEDULE already schedule — a *distinct* S6b-readiness check co-located at
+  that same review point, not the killer-edge-spike gate itself. If S6b is not
+  GREEN + merged by then, fall back to the degraded daily-input + defer tuning
+  rather than slip the 2026-06-17 deadline. (Day-14 = 2026-06-11 is the spike
+  day, not this trigger.)
 - **v1.0-personal date impact:** none. S6b is bounded (pure-core EWMA + store
   wiring + tests + a small `derive` refactor, est. ~1 day); v0.1 target
   2026-06-17 unchanged.
@@ -284,6 +287,11 @@ Neutral/open); any change to Recovery, Strain, LV math, or the CORE-root work.
   refinement + tuning are deferrable), preserving "any sub-stat" S7 level-up;
   5b — added schedule-impact note + Day-13 (2026-06-11) Plan-B trigger; 6a —
   added external-source citation + softened the Whoop/Oura weighting figures.
-- Codex review round 2: <pending — on revised draft>
+- Codex review round 2 (Skill, resumed): **APPROVE WITH CHANGES** — all 8
+  round-1 fixes confirmed adequate, no new inconsistencies. One IMPORTANT
+  remained: the Plan-B trigger was labeled "Day-13 (2026-06-11)" but Day-13 is
+  2026-06-10 (2026-06-11 = Day-14). Fixed: trigger pinned to the Day-13
+  go/no-go review (2026-06-10), co-located with — distinct from — the
+  killer-edge-spike gate. Round 3 on this one-line date fix not warranted.
 - Lead approval: <pending>
 - Owner approval: <pending>

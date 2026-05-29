@@ -52,12 +52,17 @@ decision requiring an ADR.
 
 Owner direction (2026-05-29 session): FATIGUE should be **consistent with
 Whoop/Oura**; sub-stats should **accumulate with slow decay**. Research into
-Whoop Recovery (HRV ~70% / RHR ~20% / sleep ~10%, baseline-relative) and Oura
-Readiness (RHR + HRV-balance-vs-baseline + body-temp + sleep + activity)
-confirms both are **HRV-vs-personal-baseline recovery composites, refreshed
-daily**. NeonSaga's Recovery hero score is already that composite, mapped to
-the signals the owner actually has (Apple Watch HRV rMSSD / RHR / sleep; no
-body-temp or reliable SpO2 — see PRODUCT §9 / device notes).
+Whoop Recovery (HRV-dominant — one published breakdown cites ≈70% HRV / 20%
+RHR / 10% sleep — baseline-relative) and Oura Readiness (RHR +
+HRV-balance-vs-baseline + body-temp + sleep + activity) indicates both are
+**HRV-vs-personal-baseline recovery composites, refreshed daily**. NeonSaga's
+Recovery hero score is already that composite, mapped to the signals the owner
+actually has (Apple Watch HRV rMSSD / RHR / sleep; no body-temp or reliable
+SpO2 — see PRODUCT §9 / device notes). *(External sources, 2026-05: Whoop
+Locker "How Recovery works" + Whoop developer "WHOOP 101"; Oura Help
+"Readiness Contributors" + "Readiness Score". Exact vendor weights are
+proprietary; the weighting figures above are illustrative of HRV dominance,
+not load-bearing on this decision.)*
 
 ## Decision
 
@@ -112,6 +117,26 @@ refactored so its sub-stat outputs are understood as **today's daily inputs**
 values. The two-layer split (§3) is preserved: all new math is pure core; only
 state/IO wiring is app-layer.
 
+**Type boundary (required, per Codex 2b).** Once `derive`'s sub-stat outputs
+are daily inputs, `HealthSnapshot.healthValue` / `healthLevel` (today they
+aggregate the snapshot's sub-stats) would aggregate *daily inputs*, not the
+accumulated character stats — so they must **not** drive the HEALTH display or
+level-up detection. The CONTRACT must make this unambiguous: either move the
+daily-input carrier out of `HealthSnapshot` / drop `healthValue`+`healthLevel`
+from it, or keep them but document loudly that display + `LevelUp.detect` read
+the **record's accumulated** values only (which is already how
+`HealthDetailViewModel` computes HEALTH today — it reads `latest.*Value`, not
+`snapshot.healthValue`). Pick one explicitly; do not leave two value surfaces
+that look interchangeable.
+
+**Write-path idempotence (required, per Codex 2a).** Accumulation makes the
+write path order- and count-sensitive: today's `deriveAndStore` inserts a new
+record on every call, so two calls in one day would double-accumulate. The
+CONTRACT must choose ONE policy and test it: (a) upsert one record per stat-day
+and re-derive the affected suffix on out-of-order / back-filled inputs, or
+(b) reject duplicate-day / out-of-order / back-filled inputs. Tests must cover
+duplicate `capturedAt`, same-day re-write, and back-fill.
+
 **Explicitly NOT decided here:** the exact half-life constants (CONTRACT-level,
 property-tested not pinned); renaming the FATIGUE/HUNGER sub-stats (see
 Neutral/open); any change to Recovery, Strain, LV math, or the CORE-root work.
@@ -165,9 +190,12 @@ Neutral/open); any change to Recovery, Strain, LV math, or the CORE-root work.
   than fixing the code.
 - **Alt B — FATIGUE = baseline-relative daily reading, NOT accumulated (only
   STRENGTH accumulates).** Rejected: a non-accumulated baseline-relative
-  FATIGUE equals Recovery's HRV-term (`clamp(50+z·15)` is 50% of Recovery), so
-  the detail screen would show two numbers that always agree. (This was my
-  initial chat proposal; superseded by Decision 4.)
+  FATIGUE *is* Recovery's HRV-term, which is 50% of the Recovery blend
+  (`Recovery.score` = 0.5·HRV + 0.25·RHR + 0.25·sleep), so the two would be
+  too tightly correlated to justify both on the detail screen — not literally
+  identical, but redundant. An accumulated FATIGUE (a slow HRV trend) is
+  distinct from today's Recovery. (This was my initial chat proposal;
+  superseded by Decision 4.)
 - **Alt C — Keep instantaneous sub-stats; re-define S7 to fire on Recovery-band
   changes or the HEALTH aggregate instead.** Rejected: it abandons the PRODUCT
   §3 promise that *sub-stats* level up, and leaves STRENGTH as a meaningless
@@ -190,21 +218,44 @@ Neutral/open); any change to Recovery, Strain, LV math, or the CORE-root work.
     are accumulated (EWMA, slow decay), not per-snapshot instantaneous; add
     S6b to the scope list before S7 in the load-bearing order.
   - `docs/ROADMAP.zh.md` §2: mirror the above in Chinese.
+  - `docs/ROADMAP.md` §4 "Cross-domain wiring clarifications" + `docs/ROADMAP.zh.md`
+    §4 (per Codex 1b): the line `HKWorkout → STRENGTH/FATIGUE updates flow via
+    HealthSnapshot` drops FATIGUE → becomes `HKWorkout → STRENGTH updates flow
+    via HealthSnapshot`. The no-double-count-vs-InferenceLog invariant the
+    clarification exists for is preserved verbatim; only the FATIGUE reference
+    is removed.
+  - `docs/PRODUCT.md` §6 + `docs/PRODUCT.zh.md` §6 cross-domain table, Apple
+    Watch workout row (per Codex 1a): `STRENGTH+X · FATIGUE+X (v0.1 via
+    HealthSnapshot)` → `STRENGTH+X (v0.1 via HealthSnapshot)`. Workout no
+    longer maps directly to FATIGUE; it affects FATIGUE only indirectly via the
+    next day's HRV. The `(*)` HKWorkout-routing note below the table is
+    unaffected.
   - `docs/PRODUCT.md` §9: FATIGUE row already says HRV (no source change
-    needed); add a one-line note that the WEALTH/sub-stat values accumulate.
-    *(PRODUCT §9 FATIGUE = HRV is the spec we are conforming to — it does not
-    change.)*
+    needed); add a one-line note that HEALTH sub-stat values accumulate
+    (EWMA, slow decay). *(PRODUCT §9 FATIGUE = HRV is the spec we are
+    conforming to — it does not change.)*
   - No change to PRODUCT §7 LV formulas (they operate on whatever value is
     stored), Recovery, Strain, or the CORE-root question (that is ADR-003 /
     separate).
-- **Plan B (deadline degrade, not cut):** if S6b is at risk near the Stage 1
-  deadline, ship **STRENGTH accumulation only** (fixes the real 0↔100
-  oscillation bug + the FATIGUE-source contradiction) and keep FATIGUE as a
-  simple HRV-only daily reading without EWMA; defer FATIGUE-trend tuning to the
-  v0.1 usage window. The contradiction fix and STRENGTH accumulation are *not*
-  cuttable.
-- **v1.0-personal date impact:** none. S6b is bounded (pure-core math + store
-  wiring + tests, est. ~1 day); v0.1 target 2026-06-17 unchanged.
+- **Plan B (deadline degrade, not cut — revised per Codex 5a):** the EWMA
+  primitive applies to **both** STRENGTH and FATIGUE (it is the same one-line
+  function — accumulation itself is cheap), so both keep accumulated, stable LV
+  crossings and ROADMAP §2's "any HEALTH sub-stat" level-up promise stays
+  intact. What is deferrable under deadline pressure is the **FATIGUE
+  daily-input refinement** (fall back from the baseline-relative HRV reading to
+  a simpler absolute-HRV reading) and **half-life tuning**. Non-cuttable: the
+  FATIGUE-source contradiction fix and EWMA accumulation for STRENGTH **and**
+  FATIGUE.
+- **Schedule impact (per Codex 5b):** `docs/SCHEDULE.md` has no buffer week and
+  names 2026-06-17 as the Stage 1 deadline. S6b is absorbed into the Stage 1
+  W2 slice budget (it sits between S6 and S7, both already in W2/W3); it does
+  not displace a named milestone. Trigger for the Plan-B degrade above: if S6b
+  is not GREEN + merged by **2026-06-11** (the Day-13 go/no-go gate already in
+  ROADMAP §2), fall back to the degraded daily-input + defer tuning rather than
+  slip the deadline.
+- **v1.0-personal date impact:** none. S6b is bounded (pure-core EWMA + store
+  wiring + tests + a small `derive` refactor, est. ~1 day); v0.1 target
+  2026-06-17 unchanged.
 
 ## Implementation
 
@@ -213,13 +264,26 @@ Neutral/open); any change to Recovery, Strain, LV math, or the CORE-root work.
   diff review → verify-full → PR).
 - The CONTRACT pins: the EWMA primitive's signature + purity, the per-stat
   daily-input functions, half-life constants, the store accumulation order
-  (strict `capturedAt` ascending) + cold-start, and the RED test list
-  (monotone toward input, bounded 0–100, decays on rest, cold-start = input,
-  ordering-dependence, FATIGUE invariant to sleep/workout, STRENGTH invariant
-  to non-workout signals).
+  (strict `capturedAt` ascending) + cold-start, **the write-path idempotence
+  policy (Decision/Architecture above — upsert-and-re-derive vs reject)**, **the
+  display/level-up value-source boundary (record's accumulated values, not
+  `snapshot.healthValue`)**, and the RED test list (monotone toward input,
+  bounded 0–100, decays on rest, cold-start = input, ordering-dependence,
+  duplicate-`capturedAt` / same-day re-write / back-fill, FATIGUE invariant to
+  sleep/workout, STRENGTH invariant to non-workout signals).
 
 ## Review
 
-- Codex review: <pending — dispatched after draft>
+- Codex review round 1 (Skill, fresh): **APPROVE WITH CHANGES** (0 BLOCKING /
+  5 IMPORTANT / 3 NIT). All applied to this draft: 1a/1b — spec-edit list
+  missed workout→FATIGUE sites (PRODUCT §6 EN/ZH Apple Watch row + ROADMAP §4
+  EN/ZH cross-domain clarification), now listed; 2a — added write-path
+  idempotence/back-fill policy requirement; 2b — added display/level-up
+  value-source type boundary; 3a — reworded Alt B ("too correlated", not
+  "always agree"); 5a — Plan B revised so FATIGUE keeps EWMA (only daily-input
+  refinement + tuning are deferrable), preserving "any sub-stat" S7 level-up;
+  5b — added schedule-impact note + Day-13 (2026-06-11) Plan-B trigger; 6a —
+  added external-source citation + softened the Whoop/Oura weighting figures.
+- Codex review round 2: <pending — on revised draft>
 - Lead approval: <pending>
 - Owner approval: <pending>

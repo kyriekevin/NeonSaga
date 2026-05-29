@@ -1,59 +1,92 @@
-# NeonSaga — Status (genesis)
+# NeonSaga — Status (Stage 1 in progress)
 
-**Snapshot date:** 2026-05-28
+**Snapshot date:** 2026-05-29
 **Product source of truth:** `docs/PRODUCT.md`
-**Roadmap source of truth:** `ROADMAP.md`
+**Roadmap source of truth:** `docs/ROADMAP.md`
 **规范 source of truth:** `CLAUDE.md`
+
+> **Update cadence note.** `CLAUDE.md` §1.4 mandates a STATUS update at each
+> *stage exit*. Because a stage runs for weeks, this file is also refreshed
+> mid-stage after notable slices so it never misrepresents shipped state; the
+> full §1.4 exit ritual still runs at the `v0.1` tag.
 
 ## What ships today
 
-No user-facing product yet. The genesis toolchain is wired and a minimal
-`@main` app shell builds + launches (shows "NeonSaga / core 0.0.0-genesis").
-`make verify` and `make verify-full` are both green on this skeleton. No
-production feature code yet — Stage 1 begins that. The 5-tab IA, real views,
-`@Model` classes, and services are empty placeholders until Stage 1.
+Stage 1 (HEALTH domain) is in progress. Slices **S1–S6 are merged** (the
+slice PRs are #2 / #3 / #4 / #6 / #8 / #9; #1 was genesis bootstrap, #5 the CI
+workflow, #7 the clamp-DRY refactor — current history through #9 leaves `main`
+at `ab457ef`). What is real and tested:
+
+- **HEALTH core** (`NeonSagaCore`, pure Swift): per-value LV math (`Level`,
+  `SubStat`, `SubStatValue`, `HealthStat`, `LevelUp`), `HealthMetrics` +
+  `HealthSnapshot.derive` (raw signals → HUNGER/FATIGUE/STRENGTH sub-stats),
+  `HealthDataSource` protocol, **Recovery** score 0–100 + RED/YELLOW/GREEN
+  bands, **Strain** score 0–21, shared `Comparable.clamped(to:)`.
+- **App persistence** (`NeonSaga/`): `HealthSnapshotRecord` `@Model`
+  (CloudKit-dormant, `cloudKitDatabase: .none`) + `@MainActor`
+  `HealthSnapshotStore` (save / latest / `deriveAndStore` / 28-day
+  `recentHRVBaseline`).
+- **HEALTH detail surface**: `HealthDetailView` / `HealthDetailViewModel` /
+  `HealthDetailAdapter` — a dark Cyberpunk-HUD 4-card stack (Recovery ring,
+  Sleep placeholder, Strain bar, HEALTH sub-stats).
+
+**Two caveats a reader must know:**
+
+1. **`HealthDetailView` is the *temporary* app root**, not the permanent
+   PRODUCT §10 CORE first-eye character sheet. The full 5-tab IA
+   (CORE/INGEST/ORACLE/CONTRACTS/ARCHIVE) and the permanent CORE sheet are not
+   built yet. Note, though, that Stage 1 **does** already require a CORE
+   surface: ROADMAP §2 item 8 puts the daily streak counter "in the CORE
+   first-eye header" and repeats it in the exit criteria — so **S10 must
+   resolve CORE/root placement** (a `RootView`/`RootTab` shell is still owed).
+2. **No real HealthKit data yet.** The `HKHealthStore`-backed reader is
+   deferred to **S5b** (on-device, gated on entitlement + Info.plist usage
+   string). Until S5b runs on a physical iPhone, Recovery/Strain/sub-stats
+   are exercised only against synthetic / in-memory data — the Stage 1 exit
+   criterion "values derived from real HealthKit samples" depends on S5b
+   landing *before* the `v0.1` tag.
 
 ## What's next
 
-Stage 1 (HEALTH to Whoop/Oura + AI, 3-week deadline). Before any code:
+Remaining Stage 1 slices (per `docs/ROADMAP.md` §2): **S7** Level-up takeover
+animation + haptic, **S8** Sleep architecture detail, **S9** AI Recovery
+brief, **S10** Daily streak counter, **S11** visual subjective parity polish +
+screenshots. Plus **S5b** (device HealthKit reader) — must land before the
+`v0.1` exit ritual so real data backs the scores. Each slice runs the
+`CLAUDE.md` §6 phased pipeline (CONTRACT → RED tests → worker GREEN → Codex
+diff review → `make verify-full` → PR → owner merge).
 
-1. Write `CONTRACT.md` for Stage 1 in a worktree from
-   `docs/templates/CONTRACT.md`.
-2. Codex-review the CONTRACT (first review of two).
-3. Lead writes failing RED tests against the CONTRACT.
-4. Codex-review the RED tests (second mini-review).
-5. Dispatch worker subagent for implementation.
-6. Codex-review the worker diff (second main review).
-7. Lead integrates + runs `make verify-full` + iPhone install.
-8. `git tag v0.1`.
+See `docs/ROADMAP.md` §2 for full Stage 1 scope and Plan B cut order.
 
-See `ROADMAP.md` §2 for Stage 1 scope and Plan B cut order.
-
-## File counts at genesis
+## File counts (S6)
 
 | Surface | Files |
 |---|---|
-| `NeonSagaCore/Sources/NeonSagaCore/` | 1 (`NeonSagaCore.swift` — genesis version seed) |
-| `NeonSagaCore/Sources/NeonSagaCoreTests/` | 1 (`main.swift` — custom runner + genesis smoke test) |
-| `NeonSaga/App/` | 1 (`NeonSagaApp.swift` — minimal `@main` shell) |
-| `NeonSaga/Models/` | 0 |
-| `NeonSaga/Services/` | 0 |
-| `NeonSaga/Views/` | 0 |
-| `NeonSagaTests/` | 1 (`GenesisSmokeTests.swift` — bundle smoke) |
+| `NeonSagaCore/Sources/NeonSagaCore/` | 11 (`NeonSagaCore.swift`, `Comparable+Clamped.swift`, + `Health/`: `Level`, `SubStat`, `HealthStat`, `LevelUp`, `HealthMetrics`, `HealthSnapshot`, `HealthDataSource`, `Recovery`, `Strain`) |
+| `NeonSagaCore/Sources/NeonSagaCoreTests/` | 1 (`main.swift` — custom runner; 135 assertions) |
+| `NeonSaga/App/` | 1 (`NeonSagaApp.swift` — `@main`, temporary HEALTH-detail root) |
+| `NeonSaga/Models/` | 1 (`HealthSnapshotRecord.swift`) |
+| `NeonSaga/Services/` | 2 (`HealthSnapshotStore.swift`, `HealthDetailAdapter.swift`) |
+| `NeonSaga/ViewModels/` | 1 (`HealthDetailViewModel.swift`) |
+| `NeonSaga/Views/` | 1 (`HealthDetailView.swift`) |
+| `NeonSagaTests/` | 4 (`GenesisSmokeTests`, `HealthSnapshotStoreTests`, `HealthSnapshotStoreBaselineTests`, `HealthDetailViewModelTests`) |
 | `docs/adr/` | 1 ADR + template (ADR-001 accepted) |
 
-Updated after each Stage exit per `CLAUDE.md` §1.4.
+Refreshed after notable slices; full file-count audit re-confirmed at each
+Stage exit per `CLAUDE.md` §1.4.
 
 ## Verification state
 
 - `make verify`: **green** — pre-commit hooks (swift-format lint + hygiene) +
-  `make build-core` + `make test-core` (custom runner: `2 passed, 0 failed`).
-- `make verify-full`: **green** — `make verify` + `make gen` + iOS `make build`
-  + iOS `make test` (the minimal `@main` shell + bundle smoke pass on the
-  iPhone 17 simulator). Feature-level build/test depth begins at Stage 1
-  (genesis bootstrap clause, `CLAUDE.md` §1.9).
-- Latest iOS test count: 1 (`GenesisSmokeTests` bundle smoke)
-- Latest screenshots: N/A — `docs/screenshots/` empty until Stage 1 ships
+  `make build-core` + `make test-core` (custom runner: `135 passed, 0 failed`).
+- `make verify-full`: **green** (2026-05-29) — `make verify` + `make gen` +
+  iOS `make build` + iOS `make test` on the iPhone 17 simulator:
+  **135 core / 23 iOS, 0 failed**.
+- Latest iOS test count: 23 (`GenesisSmokeTests` 1 + `HealthSnapshotStoreTests`
+  9 + `HealthSnapshotStoreBaselineTests` 2 + `HealthDetailViewModelTests` 11)
+- Latest screenshots: none committed — `docs/screenshots/` holds only
+  `.gitkeep`; the HEALTH-detail screenshot lands with S11 (visual parity)
+  per `CLAUDE.md` §1.4 stage-exit ritual.
 
 ## Git state
 
@@ -61,14 +94,15 @@ Updated after each Stage exit per `CLAUDE.md` §1.4.
   deletion blocked; enforced for admins too).
 - Workflow: all changes land via feature branch → PR → Codex review → merge
   (`CLAUDE.md` §8). Genesis specs + ADR-001 are the root commit (`3b098d4`);
-  the build toolchain + app shell land via PR #1.
+  slices S1–S6 landed via PRs #2 / #3 / #4 / #6 / #8 / #9 (#1 genesis, #5 CI,
+  #7 clamp-DRY refactor), all squash-merged; `main` now at `ab457ef`.
 - Tags: none (first tag `v0.1` at Stage 1 exit).
 
-## Pending genesis tasks
+## Genesis tasks (completed — history)
 
-These are pre-Stage-1 setup tasks. Track and complete before Stage 1
-CONTRACT starts. Maintaining them here (not in `ROADMAP.md`) keeps the
-ROADMAP focused on product stages.
+These were the pre-Stage-1 setup tasks; all are done (the first Stage 1
+CONTRACT started long ago — S1–S6 are merged). Kept here as history rather
+than in `ROADMAP.md` to keep the ROADMAP focused on product stages.
 
 - [x] Owner approves `CLAUDE.md`
 - [x] Owner approves `docs/ROADMAP.md`

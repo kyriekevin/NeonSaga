@@ -12,8 +12,10 @@
 
 ## What ships today
 
-Stage 1 (HEALTH domain) is in progress. Slices **S1–S6 are merged** (PRs
-#1–#9; `main` at `ab457ef`). What is real and tested:
+Stage 1 (HEALTH domain) is in progress. Slices **S1–S6 are merged** (the
+slice PRs are #2 / #3 / #4 / #6 / #8 / #9; #1 was genesis bootstrap, #5 the CI
+workflow, #7 the clamp-DRY refactor — current history through #9 leaves `main`
+at `ab457ef`). What is real and tested:
 
 - **HEALTH core** (`NeonSagaCore`, pure Swift): per-value LV math (`Level`,
   `SubStat`, `SubStatValue`, `HealthStat`, `LevelUp`), `HealthMetrics` +
@@ -31,10 +33,12 @@ Stage 1 (HEALTH domain) is in progress. Slices **S1–S6 are merged** (PRs
 **Two caveats a reader must know:**
 
 1. **`HealthDetailView` is the *temporary* app root**, not the permanent
-   PRODUCT §10 CORE first-eye character sheet. The 5-tab IA
-   (CORE/INGEST/ORACLE/CONTRACTS/ARCHIVE) and the CORE root are not built yet;
-   a slice for CORE + `RootView`/`RootTab` is still owed and is *not* an
-   explicit Stage 1 scope item today (see ROADMAP §2 — flagged for owner).
+   PRODUCT §10 CORE first-eye character sheet. The full 5-tab IA
+   (CORE/INGEST/ORACLE/CONTRACTS/ARCHIVE) and the permanent CORE sheet are not
+   built yet. Note, though, that Stage 1 **does** already require a CORE
+   surface: ROADMAP §2 item 8 puts the daily streak counter "in the CORE
+   first-eye header" and repeats it in the exit criteria — so **S10 must
+   resolve CORE/root placement** (a `RootView`/`RootTab` shell is still owed).
 2. **No real HealthKit data yet.** The `HKHealthStore`-backed reader is
    deferred to **S5b** (on-device, gated on entitlement + Info.plist usage
    string). Until S5b runs on a physical iPhone, Recovery/Strain/sub-stats
@@ -58,7 +62,7 @@ See `docs/ROADMAP.md` §2 for full Stage 1 scope and Plan B cut order.
 
 | Surface | Files |
 |---|---|
-| `NeonSagaCore/Sources/NeonSagaCore/` | 10 (`NeonSagaCore.swift`, `Comparable+Clamped.swift`, `Health/`: `Level`, `SubStat`, `HealthStat`, `LevelUp`, `HealthMetrics`, `HealthSnapshot`, `HealthDataSource`, `Recovery`, `Strain`) |
+| `NeonSagaCore/Sources/NeonSagaCore/` | 11 (`NeonSagaCore.swift`, `Comparable+Clamped.swift`, + `Health/`: `Level`, `SubStat`, `HealthStat`, `LevelUp`, `HealthMetrics`, `HealthSnapshot`, `HealthDataSource`, `Recovery`, `Strain`) |
 | `NeonSagaCore/Sources/NeonSagaCoreTests/` | 1 (`main.swift` — custom runner; 135 assertions) |
 | `NeonSaga/App/` | 1 (`NeonSagaApp.swift` — `@main`, temporary HEALTH-detail root) |
 | `NeonSaga/Models/` | 1 (`HealthSnapshotRecord.swift`) |
@@ -90,14 +94,15 @@ Stage exit per `CLAUDE.md` §1.4.
   deletion blocked; enforced for admins too).
 - Workflow: all changes land via feature branch → PR → Codex review → merge
   (`CLAUDE.md` §8). Genesis specs + ADR-001 are the root commit (`3b098d4`);
-  S1–S6 landed via PRs #1–#9 (squash-merged), `main` now at `ab457ef`.
+  slices S1–S6 landed via PRs #2 / #3 / #4 / #6 / #8 / #9 (#1 genesis, #5 CI,
+  #7 clamp-DRY refactor), all squash-merged; `main` now at `ab457ef`.
 - Tags: none (first tag `v0.1` at Stage 1 exit).
 
-## Pending genesis tasks
+## Genesis tasks (completed — history)
 
-These are pre-Stage-1 setup tasks. Track and complete before Stage 1
-CONTRACT starts. Maintaining them here (not in `ROADMAP.md`) keeps the
-ROADMAP focused on product stages.
+These were the pre-Stage-1 setup tasks; all are done (the first Stage 1
+CONTRACT started long ago — S1–S6 are merged). Kept here as history rather
+than in `ROADMAP.md` to keep the ROADMAP focused on product stages.
 
 - [x] Owner approves `CLAUDE.md`
 - [x] Owner approves `docs/ROADMAP.md`

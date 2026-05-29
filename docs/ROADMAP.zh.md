@@ -79,7 +79,7 @@ HEALTH 任一 sub-stat 越过 LV 阈值时 Level-up 全屏接管触发。
    service + streak source service,追踪连续 app-open 天数。
 9. **HealthSnapshot service(Stage 3 跨域前置)** —— 把 HealthKit 数据
    (HRV、HR、sleep、workouts)桥接到 HEALTH sub-stats:**HRV → FATIGUE / Recovery;
-   HKWorkout → STRENGTH;sleep + RHR → 仅 Recovery**(FATIGUE 仅由 HRV 驱动,
+   HKWorkout → STRENGTH;sleep → 仅 Recovery**(FATIGUE 仅由 HRV 驱动,
    按 PRODUCT §9 —— workout/sleep 不喂 FATIGUE;ADR-002)。HEALTH sub-stat 值
    是**累积的(EWMA,时间感知缓慢衰减),非每个 snapshot 瞬时值** —— 累积模型
    (slice **S6b**)在 **Level-up 全屏接管(项 3)之前**落地,使 LV 跨越有意义、
@@ -246,9 +246,10 @@ v0.3 价值承诺 + 退出准则依赖它)。
 
 ### 跨域 wire 澄清
 
-- **HKWorkout → STRENGTH/FATIGUE 更新走 `HealthSnapshot`,不是 `InferenceLog`。**
+- **HKWorkout → STRENGTH 更新走 `HealthSnapshot`,不是 `InferenceLog`。**
   这是硬不变式(避免双重计数)。Stage 1 已 wire。
-  Stage 3 **不**让 HKWorkout 走跨域规则引擎。
+  Stage 3 **不**让 HKWorkout 走跨域规则引擎。(FATIGUE 由 HRV 驱动,
+  非 workout 驱动 —— ADR-002。)
 - **HKWorkout → 活跃 STRENGTH quest 进度** wire 在 Stage 2 的 quest 层
   (不在 Stage 3 的跨域引擎)。
 

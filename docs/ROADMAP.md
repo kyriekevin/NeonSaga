@@ -80,7 +80,7 @@ the Plan B list below — do not slip the deadline.
    service.
 9. **HealthSnapshot service (Stage 3 cross-domain prerequisite)** — Bridges
    HealthKit data (HRV, HR, sleep, workouts) → HEALTH sub-stats: **HRV →
-   FATIGUE / Recovery; HKWorkout → STRENGTH; sleep + RHR → Recovery only**
+   FATIGUE / Recovery; HKWorkout → STRENGTH; sleep → Recovery only**
    (FATIGUE is HRV-driven per PRODUCT §9 — workout/sleep do NOT feed FATIGUE;
    ADR-002). HEALTH sub-stat values are **accumulated (EWMA, time-aware slow
    decay), not per-snapshot instantaneous** — the accumulation model (slice

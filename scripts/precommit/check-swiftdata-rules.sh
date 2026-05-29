@@ -7,9 +7,10 @@
 #
 # The scan is attribute-span aware: it strips `//` line comments, then flags
 # `.unique` anywhere inside an `@Attribute( … )` span — including when the
-# attribute is split across lines. (Block comments / string literals containing
-# a literal ".unique" inside an @Attribute(...) are a documented, vanishingly
-# rare false-positive we accept rather than parse Swift in shell.)
+# attribute is split across lines, and counting parens in a string-literal-aware
+# way so a `)` inside a string (e.g. `originalName: "id_with_)"`) does not close
+# the span early. (A literal ".unique" appearing *inside* a string is a
+# vanishingly rare false-positive we accept rather than fully parse Swift in shell.)
 set -u
 
 status=0
@@ -21,17 +22,23 @@ for f in "$@"; do
       while ((p = index(substr(doc, idx), "@Attribute(")) > 0) {
         start = idx + p - 1
         rest = substr(doc, start)
-        # Walk to the MATCHING close paren (depth-aware) so nested parens inside
-        # the attribute args — e.g. @Attribute(originalName: foo("id"), .unique) —
-        # do not truncate the span at the first ")" and hide a later .unique.
+        # Walk to the MATCHING close paren (depth-aware, string-literal-aware) so
+        # neither nested parens — @Attribute(originalName: foo("id"), .unique) —
+        # nor a ")" inside a string — @Attribute(originalName: "id_with_)", .unique)
+        # — truncate the span early and hide a later .unique.
         depth = 0
         cp = 0
+        in_str = 0
         for (i = 1; i <= length(rest); i++) {
           ch = substr(rest, i, 1)
-          if (ch == "(") depth++
-          else if (ch == ")") {
-            depth--
-            if (depth == 0) { cp = i; break }
+          if (ch == "\"" && substr(rest, i - 1, 1) != "\\") {
+            in_str = !in_str
+          } else if (!in_str) {
+            if (ch == "(") depth++
+            else if (ch == ")") {
+              depth--
+              if (depth == 0) { cp = i; break }
+            }
           }
         }
         if (cp == 0) break                       # unterminated span — stop

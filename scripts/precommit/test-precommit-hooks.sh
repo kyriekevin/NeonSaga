@@ -55,11 +55,13 @@ printf '@Model final class Foo {\n  var id: UUID?\n}\n'                         
 printf '@Model final class Bar {\n  @Attribute(.unique) var id: UUID?\n}\n'      > "$TMP/BadModel.swift"
 printf '@Model final class Baz {\n  @Attribute(.unique, originalName: "x") var id: UUID?\n}\n' > "$TMP/BadArgs.swift"
 printf '@Model final class Qux {\n  @Attribute(\n    .unique\n  ) var id: UUID?\n}\n'           > "$TMP/BadMultiline.swift"
+printf '@Model final class Nested {\n  @Attribute(originalName: foo("id"), .unique) var id: UUID?\n}\n' > "$TMP/BadNested.swift"
 printf '@Model final class Cmt {\n  // @Attribute(.unique) — note, not active\n  var id: UUID?\n}\n' > "$TMP/CommentedOut.swift"
 assert_exit 0 "no unique constraint passes"           "$HERE/check-swiftdata-rules.sh" "$TMP/GoodModel.swift"
 assert_exit 1 "@Attribute(.unique) rejected"          "$HERE/check-swiftdata-rules.sh" "$TMP/BadModel.swift"
 assert_exit 1 "@Attribute(.unique, …) rejected"       "$HERE/check-swiftdata-rules.sh" "$TMP/BadArgs.swift"
 assert_exit 1 "multiline @Attribute(.unique) rejected" "$HERE/check-swiftdata-rules.sh" "$TMP/BadMultiline.swift"
+assert_exit 1 "nested-parens .unique rejected"        "$HERE/check-swiftdata-rules.sh" "$TMP/BadNested.swift"
 assert_exit 0 "commented-out @Attribute passes"       "$HERE/check-swiftdata-rules.sh" "$TMP/CommentedOut.swift"
 
 echo "→ forbidden-paths (CONTRACT.md / *.xcodeproj)"

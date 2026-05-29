@@ -21,7 +21,19 @@ for f in "$@"; do
       while ((p = index(substr(doc, idx), "@Attribute(")) > 0) {
         start = idx + p - 1
         rest = substr(doc, start)
-        cp = index(rest, ")")
+        # Walk to the MATCHING close paren (depth-aware) so nested parens inside
+        # the attribute args — e.g. @Attribute(originalName: foo("id"), .unique) —
+        # do not truncate the span at the first ")" and hide a later .unique.
+        depth = 0
+        cp = 0
+        for (i = 1; i <= length(rest); i++) {
+          ch = substr(rest, i, 1)
+          if (ch == "(") depth++
+          else if (ch == ")") {
+            depth--
+            if (depth == 0) { cp = i; break }
+          }
+        }
         if (cp == 0) break                       # unterminated span — stop
         span = substr(rest, 1, cp)
         if (span ~ /\.unique/) {

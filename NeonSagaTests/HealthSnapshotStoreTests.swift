@@ -4,9 +4,11 @@ import XCTest
 
 @testable import NeonSaga
 
-// S5 RED tests — pin HealthSnapshotRecord @Model + HealthSnapshotStore persistence
-// behavior (CONTRACT S5). Fails to build until the green commit adds the model,
-// the store, the ModelContainer registration, and the NeonSagaCore test dependency.
+// S5 persistence tests, migrated for S6b (ADR-002): `HealthSnapshot` is now a metrics
+// carrier, records carry ACCUMULATED sub-stat values, and records are built via
+// `HealthSnapshotRecord(capturedAt:metrics:hunger:fatigue:strength:)`. Pins the @Model
+// + store persistence seam (latest / save / cold-start deriveAndStore / error path).
+// Accumulation behavior proper lives in `HealthAccumulationStoreTests`.
 final class HealthSnapshotStoreTests: XCTestCase {
 
     // MARK: - Test doubles
@@ -28,6 +30,18 @@ final class HealthSnapshotStoreTests: XCTestCase {
         return try ModelContainer(for: HealthSnapshotRecord.self, configurations: config)
     }
 
+    /// Seeds one record (raw metrics + given ACCUMULATED values) at `capturedAt`.
+    @MainActor
+    private func seed(
+        _ store: HealthSnapshotStore, _ metrics: HealthMetrics, at capturedAt: Date,
+        hunger: Double = 50, fatigue: Double = 50, strength: Double = 0
+    ) throws {
+        try store.save(
+            HealthSnapshotRecord(
+                capturedAt: capturedAt, metrics: metrics,
+                hunger: hunger, fatigue: fatigue, strength: strength))
+    }
+
     // MARK: - latest() / save() (behaviors 1–6)
 
     @MainActor
@@ -41,13 +55,9 @@ final class HealthSnapshotStoreTests: XCTestCase {
         let store = HealthSnapshotStore(context: ModelContext(try makeContainer()))
         let capturedAt = Date(timeIntervalSince1970: 1_700_000_000)
         let metrics = HealthMetrics(
-            restingHeartRate: 58,
-            hrvRMSSD: 42,
-            sleepEfficiency: 0.9,
-            activeWorkoutEnergyKilocalories: 600
-        )
-        let snapshot = HealthSnapshot.derive(from: metrics, at: capturedAt)
-        try store.save(snapshot)
+            restingHeartRate: 58, hrvRMSSD: 42, sleepEfficiency: 0.9,
+            activeWorkoutEnergyKilocalories: 600)
+        try seed(store, metrics, at: capturedAt, hunger: 40, fatigue: 70, strength: 88)
 
         let rec = try XCTUnwrap(try store.latest())
         XCTAssertEqual(rec.capturedAt, capturedAt)
@@ -55,9 +65,9 @@ final class HealthSnapshotStoreTests: XCTestCase {
         XCTAssertEqual(rec.hrvRMSSD, 42)
         XCTAssertEqual(rec.sleepEfficiency, 0.9)
         XCTAssertEqual(rec.activeWorkoutEnergyKilocalories, 600)
-        XCTAssertEqual(rec.hungerValue, snapshot.hunger.value)
-        XCTAssertEqual(rec.fatigueValue, snapshot.fatigue.value)
-        XCTAssertEqual(rec.strengthValue, snapshot.strength.value)
+        XCTAssertEqual(rec.hungerValue, 40)
+        XCTAssertEqual(rec.fatigueValue, 70)
+        XCTAssertEqual(rec.strengthValue, 88)
     }
 
     @MainActor
@@ -68,7 +78,7 @@ final class HealthSnapshotStoreTests: XCTestCase {
         let t2 = Date(timeIntervalSince1970: 3000)
         // Insert out of chronological order: t1, t2, t0.
         for t in [t1, t2, t0] {
-            try store.save(HealthSnapshot.derive(from: HealthMetrics(), at: t))
+            try seed(store, HealthMetrics(), at: t)
         }
         XCTAssertEqual(try store.latest()?.capturedAt, t2)
     }
@@ -79,15 +89,16 @@ final class HealthSnapshotStoreTests: XCTestCase {
         let context = ModelContext(container)
         let store = HealthSnapshotStore(context: context)
         let capturedAt = Date(timeIntervalSince1970: 5000)
-        let snap = HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 40), at: capturedAt)
         let earlier = Date(timeIntervalSince1970: 9000)
         let later = Date(timeIntervalSince1970: 9999)
-        // Force identical capturedAt on both so the test isolates the storedAt
-        // tie-break (and cannot pass via a capturedAt difference).
-        let r1 = HealthSnapshotRecord(from: snap, storedAt: earlier)
-        r1.capturedAt = capturedAt
-        let r2 = HealthSnapshotRecord(from: snap, storedAt: later)
-        r2.capturedAt = capturedAt
+        // Identical capturedAt on both isolates the storedAt tie-break (cannot pass
+        // via a capturedAt difference).
+        let r1 = HealthSnapshotRecord(
+            capturedAt: capturedAt, metrics: HealthMetrics(hrvRMSSD: 40),
+            hunger: 50, fatigue: 50, strength: 0, storedAt: earlier)
+        let r2 = HealthSnapshotRecord(
+            capturedAt: capturedAt, metrics: HealthMetrics(hrvRMSSD: 40),
+            hunger: 50, fatigue: 50, strength: 0, storedAt: later)
         context.insert(r1)
         context.insert(r2)
         try context.save()
@@ -99,12 +110,9 @@ final class HealthSnapshotStoreTests: XCTestCase {
     func testNilRawMetricSurvivesRoundTrip() throws {
         let store = HealthSnapshotStore(context: ModelContext(try makeContainer()))
         let metrics = HealthMetrics(
-            restingHeartRate: nil,
-            hrvRMSSD: 40,
-            sleepEfficiency: nil,
-            activeWorkoutEnergyKilocalories: nil
-        )
-        try store.save(HealthSnapshot.derive(from: metrics, at: Date(timeIntervalSince1970: 100)))
+            restingHeartRate: nil, hrvRMSSD: 40, sleepEfficiency: nil,
+            activeWorkoutEnergyKilocalories: nil)
+        try seed(store, metrics, at: Date(timeIntervalSince1970: 100))
 
         let rec = try XCTUnwrap(try store.latest())
         XCTAssertNil(rec.restingHeartRate)
@@ -119,15 +127,11 @@ final class HealthSnapshotStoreTests: XCTestCase {
         let store = HealthSnapshotStore(context: ModelContext(container))
         let capturedAt = Date(timeIntervalSince1970: 4242)
         let metrics = HealthMetrics(
-            restingHeartRate: 60,
-            hrvRMSSD: 35,
-            sleepEfficiency: 0.8,
-            activeWorkoutEnergyKilocalories: 300
-        )
-        try store.save(HealthSnapshot.derive(from: metrics, at: capturedAt))
+            restingHeartRate: 60, hrvRMSSD: 35, sleepEfficiency: 0.8,
+            activeWorkoutEnergyKilocalories: 300)
+        try seed(store, metrics, at: capturedAt)
 
-        // Read through a brand-new context on the same container to prove the row
-        // is durably persisted, not just live in the writing context's cache.
+        // Read through a brand-new context on the same container to prove durability.
         let fresh = ModelContext(container)
         let rows = try fresh.fetch(FetchDescriptor<HealthSnapshotRecord>())
         XCTAssertEqual(rows.count, 1)
@@ -135,29 +139,30 @@ final class HealthSnapshotStoreTests: XCTestCase {
         XCTAssertEqual(rows.first?.restingHeartRate, 60)
     }
 
-    // MARK: - deriveAndStore(from:at:) (behaviors 7–8)
+    // MARK: - deriveAndStore cold start + error path (accumulation proper: HealthAccumulationStoreTests)
 
     @MainActor
-    func testDeriveAndStoreMatchesDerive() async throws {
+    func testDeriveAndStoreColdStartStoresDailyInputAndStampsZone() async throws {
         let store = HealthSnapshotStore(context: ModelContext(try makeContainer()))
         let capturedAt = Date(timeIntervalSince1970: 7000)
         let metrics = HealthMetrics(
-            restingHeartRate: 55,
-            hrvRMSSD: 50,
-            sleepEfficiency: 0.95,
-            activeWorkoutEnergyKilocalories: 1200
-        )
-        let expected = HealthSnapshot.derive(from: metrics, at: capturedAt)
+            restingHeartRate: 55, hrvRMSSD: 50, sleepEfficiency: 0.95,
+            activeWorkoutEnergyKilocalories: 1200)
+        // On an empty store the baseline is empty → cold start, so accumulated values
+        // equal today's DailyHealthInput.
+        let expected = DailyHealthInput.derive(from: metrics, hrvBaseline: [], at: capturedAt)
 
         let rec = try await store.deriveAndStore(from: StubSource(metrics: metrics), at: capturedAt)
         XCTAssertEqual(rec.capturedAt, capturedAt)
-        XCTAssertEqual(rec.hungerValue, expected.hunger.value)
-        XCTAssertEqual(rec.fatigueValue, expected.fatigue.value)
-        XCTAssertEqual(rec.strengthValue, expected.strength.value)
+        XCTAssertEqual(rec.hungerValue, expected.hunger, accuracy: 1e-9)
+        XCTAssertEqual(rec.fatigueValue, expected.fatigue, accuracy: 1e-9)
+        XCTAssertEqual(rec.strengthValue, expected.strength, accuracy: 1e-9)
         XCTAssertEqual(rec.restingHeartRate, 55)
         XCTAssertEqual(rec.hrvRMSSD, 50)
         XCTAssertEqual(rec.sleepEfficiency, 0.95)
         XCTAssertEqual(rec.activeWorkoutEnergyKilocalories, 1200)
+        XCTAssertNotNil(
+            rec.captureTimeZoneIdentifier, "capture zone is stamped for stat-day grouping")
     }
 
     @MainActor
@@ -165,9 +170,7 @@ final class HealthSnapshotStoreTests: XCTestCase {
         let store = HealthSnapshotStore(context: ModelContext(try makeContainer()))
         let capturedAt = Date(timeIntervalSince1970: 8000)
         _ = try await store.deriveAndStore(
-            from: StubSource(metrics: HealthMetrics(hrvRMSSD: 30)),
-            at: capturedAt
-        )
+            from: StubSource(metrics: HealthMetrics(hrvRMSSD: 30)), at: capturedAt)
         XCTAssertEqual(try store.latest()?.capturedAt, capturedAt)
     }
 
@@ -178,13 +181,11 @@ final class HealthSnapshotStoreTests: XCTestCase {
         let store = HealthSnapshotStore(context: context)
         // Seed an existing record so we can prove a throw leaves latest() unchanged.
         let seeded = Date(timeIntervalSince1970: 6000)
-        try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 25), at: seeded))
+        try seed(store, HealthMetrics(hrvRMSSD: 25), at: seeded)
 
         do {
             _ = try await store.deriveAndStore(
-                from: ThrowingSource(),
-                at: Date(timeIntervalSince1970: 9_000_000)
-            )
+                from: ThrowingSource(), at: Date(timeIntervalSince1970: 9_000_000))
             XCTFail("expected deriveAndStore to rethrow the source error")
         } catch is SourceError {
             // expected — source failure propagates

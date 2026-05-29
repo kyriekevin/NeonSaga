@@ -5,23 +5,41 @@ import SwiftData
 @Model final class HealthSnapshotRecord {
     var capturedAt: Date = Date.distantPast
     var storedAt: Date = Date.distantPast
+    /// S6b (ADR-002): time zone at capture, so stat-day grouping uses the local
+    /// date label `(y,m,d)` in the zone the record was captured in (travel/DST-robust).
+    /// Optional + nil-default → CloudKit-safe, SwiftData lightweight migration.
+    var captureTimeZoneIdentifier: String?
     var restingHeartRate: Double?
     var hrvRMSSD: Double?
     var sleepEfficiency: Double?
     var activeWorkoutEnergyKilocalories: Double?
+    /// S6b (ADR-002): these are now the ACCUMULATED (EWMA, time-aware) character-stat
+    /// values carried forward across records — NOT the instantaneous daily inputs.
     var hungerValue: Double = 0
     var fatigueValue: Double = 0
     var strengthValue: Double = 0
 
-    init(from snapshot: HealthSnapshot, storedAt: Date = Date()) {
-        self.capturedAt = snapshot.capturedAt
+    /// Builds a record from the raw metrics carrier + the ACCUMULATED sub-stat values.
+    /// The store computes the accumulation (EWMA over the prior record + today's
+    /// `DailyHealthInput`), then constructs the record with the resulting values.
+    init(
+        capturedAt: Date,
+        metrics: HealthMetrics,
+        hunger: Double,
+        fatigue: Double,
+        strength: Double,
+        storedAt: Date = Date(),
+        captureTimeZoneIdentifier: String? = nil
+    ) {
+        self.capturedAt = capturedAt
         self.storedAt = storedAt
-        self.restingHeartRate = snapshot.metrics.restingHeartRate
-        self.hrvRMSSD = snapshot.metrics.hrvRMSSD
-        self.sleepEfficiency = snapshot.metrics.sleepEfficiency
-        self.activeWorkoutEnergyKilocalories = snapshot.metrics.activeWorkoutEnergyKilocalories
-        self.hungerValue = snapshot.hunger.value
-        self.fatigueValue = snapshot.fatigue.value
-        self.strengthValue = snapshot.strength.value
+        self.captureTimeZoneIdentifier = captureTimeZoneIdentifier
+        self.restingHeartRate = metrics.restingHeartRate
+        self.hrvRMSSD = metrics.hrvRMSSD
+        self.sleepEfficiency = metrics.sleepEfficiency
+        self.activeWorkoutEnergyKilocalories = metrics.activeWorkoutEnergyKilocalories
+        self.hungerValue = hunger
+        self.fatigueValue = fatigue
+        self.strengthValue = strength
     }
 }

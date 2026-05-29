@@ -306,6 +306,13 @@ Never commit real API keys. Provider keys go through `APIKeyStore`
 
 ## 8. Repo hygiene
 
+Run `make install-hooks` once per clone so `git commit` runs the pre-commit
+gate locally (the committed `.pre-commit-config.yaml` does NOT auto-install).
+The gate (swift-format lint `--strict` + the §3/§5 guards in
+`scripts/precommit/` + hygiene) is authoritative — verify lint via `make hooks`
+/ `make verify`, never a `git status`-derived file list. `swift format lint`
+WITHOUT `--strict` only warns and exits 0 (a false-green trap).
+
 Before pushing:
 
 ```bash

@@ -10,19 +10,28 @@ SCHEME    := NeonSaga
 SIM       := platform=iOS Simulator,name=iPhone 17
 CORE_DIR  := NeonSagaCore
 
-.PHONY: verify verify-full hooks build-core test-core build test gen open clean
+.PHONY: verify verify-full hooks test-hooks install-hooks build-core test-core build test gen open clean
 
-# verify — fast inner loop: format/lint hooks + core build + core tests.
-verify: hooks build-core test-core
+# verify — fast inner loop: format/lint hooks + hook self-tests + core build + tests.
+verify: hooks test-hooks build-core test-core
 	@echo "✅ make verify green"
 
 # verify-full — adds Xcode project regen + iOS app build + iOS test (stage exit).
 verify-full: verify gen build test
 	@echo "✅ make verify-full green"
 
-# hooks — run pre-commit hooks (swift-format lint + hygiene) across all files.
+# hooks — run pre-commit hooks (swift-format lint + custom guards + hygiene).
 hooks:
 	pre-commit run --all-files
+
+# test-hooks — regression-test the local pre-commit guard scripts (bad→reject, good→pass).
+test-hooks:
+	./scripts/precommit/test-precommit-hooks.sh
+
+# install-hooks — install pre-commit as a git hook so `git commit` runs the gate
+# locally (the committed config alone does NOT auto-install — run this once).
+install-hooks:
+	pre-commit install
 
 # build-core — swift build of the pure-Swift NeonSagaCore package.
 build-core:

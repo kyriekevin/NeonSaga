@@ -14,6 +14,9 @@ build/
 .build/
 .swiftpm/
 
+# Worktree-local spec contract — never committed (per CLAUDE.md §1.1)
+/CONTRACT.md
+
 # Local secrets / env (per CLAUDE.md §7)
 .env
 .env.local

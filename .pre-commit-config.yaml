@@ -1,6 +1,8 @@
-# Pre-commit hooks for NeonSaga. Run via `make verify` (hooks target) or
-# `pre-commit run --all-files`. swift-format ships with the Xcode toolchain
-# (`swift format`), so it runs as a local/system hook rather than a managed env.
+# Pre-commit hooks for NeonSaga. Install locally once with `make install-hooks`
+# (so `git commit` runs the gate); CI runs `make verify` → `pre-commit run
+# --all-files`. swift-format ships with the Xcode toolchain (`swift format`), so
+# it runs as a local/system hook rather than a managed env. The custom guards in
+# scripts/precommit/ are regression-tested by `make test-hooks`.
 #
 # Locked spec docs under docs/*.md are excluded from the whitespace fixers so
 # the hooks never churn 7-pass-reviewed text.
@@ -12,6 +14,28 @@ repos:
         entry: swift format lint --strict
         language: system
         types: [swift]
+
+      # §3 two-layer split — NeonSagaCore must stay pure Swift.
+      - id: core-import-ban
+        name: 'NeonSagaCore purity (§3): no SwiftUI/SwiftData/UIKit/HealthKit/CoreLocation'
+        entry: scripts/precommit/check-core-imports.sh
+        language: system
+        files: '^NeonSagaCore/Sources/NeonSagaCore/.*\.swift$'
+
+      # §5 SwiftData + CloudKit — no unique constraints on @Model classes.
+      - id: swiftdata-unique-ban
+        name: 'SwiftData @Model rules (§5): no @Attribute(.unique)'
+        entry: scripts/precommit/check-swiftdata-rules.sh
+        language: system
+        files: '^NeonSaga/Models/.*\.swift$'
+
+      # Worktree-local / generated artifacts must never be committed (only
+      # reachable via `git add -f`, since both are .gitignored).
+      - id: forbidden-paths
+        name: 'Forbidden staged paths: CONTRACT.md, *.xcodeproj'
+        entry: scripts/precommit/check-forbidden-paths.sh
+        language: system
+        files: '(^CONTRACT\.md$)|(\.xcodeproj/)'
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

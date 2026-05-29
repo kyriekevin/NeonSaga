@@ -1,11 +1,11 @@
 import Foundation
 import NeonSagaCore
 
-/// Reconstructs a `HealthSnapshot` from a persisted `HealthSnapshotRecord`.
+/// Reconstructs a `HealthSnapshot` (metrics carrier) from a persisted record.
 ///
-/// Single testable reconstruction site (CONTRACT S6 / Codex Q2). Recovery and
-/// Strain read only `.metrics`, so re-derived sub-stat values are irrelevant to
-/// scoring; sub-stat display uses the record's own stored values directly.
+/// S6b: `HealthSnapshot` is now a metrics carrier (no derived sub-stats), so this
+/// just bundles the record's raw metrics + capturedAt. Recovery / Strain read only
+/// `.metrics`; sub-stat display uses the record's own ACCUMULATED stored values.
 enum HealthDetailAdapter {
     static func snapshot(from record: HealthSnapshotRecord) -> HealthSnapshot {
         let metrics = HealthMetrics(
@@ -14,6 +14,6 @@ enum HealthDetailAdapter {
             sleepEfficiency: record.sleepEfficiency,
             activeWorkoutEnergyKilocalories: record.activeWorkoutEnergyKilocalories
         )
-        return HealthSnapshot.derive(from: metrics, at: record.capturedAt)
+        return HealthSnapshot(capturedAt: record.capturedAt, metrics: metrics)
     }
 }

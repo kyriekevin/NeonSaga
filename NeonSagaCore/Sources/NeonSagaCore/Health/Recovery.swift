@@ -79,3 +79,20 @@ public enum Recovery {
         return .scored(value: value, band: Recovery.band(for: value))
     }
 }
+
+// MARK: - Baseline-relative HRV recovery reading (S6b / ADR-002)
+
+extension Recovery {
+    /// The baseline-relative HRV recovery reading, 0...100 — the Recovery HRV
+    /// term, extracted so the FATIGUE daily input can reuse it (ADR-002 Decision 3).
+    ///
+    /// Returns neutral 50 while *calibrating*: today-HRV nil/non-finite, OR fewer
+    /// than 14 finite baseline samples, OR baseline std < 1 ms. Above the baseline
+    /// mean reads > 50, below reads < 50; the z-score is scaled by 15 and clamped.
+    public static func hrvRecoveryReading(todayHRV: Double?, baseline: [Double]) -> Double {
+        // S6b RED stub — GREEN extracts the HRV-term logic from `score` and routes
+        // `score` through it (DRY). The sentinel fails the assertions so
+        // `make test-core` stays red until the real body lands.
+        0
+    }
+}

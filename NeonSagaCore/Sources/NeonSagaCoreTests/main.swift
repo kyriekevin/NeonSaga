@@ -130,8 +130,8 @@ private struct FakeHealthDataSource: HealthDataSource {
 
 private let s2Epoch = Date(timeIntervalSince1970: 1_700_000_000)
 
-group("health-snapshot-derive") {
-    // RB #1 — partial init: each omitted field is nil (omitted ≠ 0).
+group("daily-health-input") {
+    // RB #1 — HealthMetrics partial/blank init: omitted ≠ 0 (unchanged from S2).
     let partial = HealthMetrics(hrvRMSSD: 45)
     expect(partial.hrvRMSSD == 45, "supplied field is set")
     expect(
@@ -143,160 +143,221 @@ group("health-snapshot-derive") {
         blank.restingHeartRate == nil && blank.hrvRMSSD == nil && blank.sleepEfficiency == nil
             && blank.activeWorkoutEnergyKilocalories == nil, "no-arg init is all-nil")
 
-    // RB #2 — derive retains capturedAt + metrics verbatim.
+    // A >=14-sample baseline, mean 53.5, std > 1 — for baseline-relative FATIGUE.
+    let baseline = (0..<28).map { 40.0 + Double($0) }
+
+    // RB #2 — HealthSnapshot is now a metrics carrier; DailyHealthInput.derive retains capturedAt.
     let m = HealthMetrics(
         restingHeartRate: 55, hrvRMSSD: 45, sleepEfficiency: 0.9,
         activeWorkoutEnergyKilocalories: 300)
-    let snap = HealthSnapshot.derive(from: m, at: s2Epoch)
-    expect(snap.capturedAt == s2Epoch, "derive retains capturedAt")
-    expect(snap.metrics == m, "derive retains metrics verbatim")
-
-    // RB #3 — correct SubStat identity on each derived sub-stat.
-    expect(snap.hunger.substat == .hunger, "hunger sub-stat identity")
-    expect(snap.fatigue.substat == .fatigue, "fatigue sub-stat identity")
-    expect(snap.strength.substat == .strength, "strength sub-stat identity")
-
-    // RB #4 + #9 — all-nil metrics → finite, clamped 0...100 (NaN-guard).
-    let empty = HealthSnapshot.derive(from: HealthMetrics(), at: s2Epoch)
+    let snap = HealthSnapshot(capturedAt: s2Epoch, metrics: m)
+    expect(snap.capturedAt == s2Epoch, "HealthSnapshot retains capturedAt")
+    expect(snap.metrics == m, "HealthSnapshot retains metrics verbatim")
     expect(
-        empty.fatigue.value.isFinite && (0...100).contains(empty.fatigue.value),
+        DailyHealthInput.derive(from: m, hrvBaseline: baseline, at: s2Epoch).capturedAt == s2Epoch,
+        "DailyHealthInput.derive retains capturedAt")
+
+    // RB #4/#9 — all-nil metrics → finite, clamped 0...100 (empty baseline → FATIGUE calibrating).
+    let empty = DailyHealthInput.derive(from: HealthMetrics(), hrvBaseline: [], at: s2Epoch)
+    expect(
+        empty.fatigue.isFinite && (0...100).contains(empty.fatigue),
         "all-nil FATIGUE finite in 0...100")
     expect(
-        empty.strength.value.isFinite && (0...100).contains(empty.strength.value),
+        empty.strength.isFinite && (0...100).contains(empty.strength),
         "all-nil STRENGTH finite in 0...100")
     expect(
-        empty.hunger.value.isFinite && (0...100).contains(empty.hunger.value),
+        empty.hunger.isFinite && (0...100).contains(empty.hunger),
         "all-nil HUNGER finite in 0...100")
 
-    // RB #14 (Gemini PR#3 G1) — missing inputs are EXCLUDED from the FATIGUE average,
-    // not counted as 0; all-missing → neutral 50 (a missing sample ≠ worst state).
-    expect(empty.fatigue.value == 50.0, "all-missing FATIGUE → neutral 50, not 0")
-    let twoPresent = HealthSnapshot.derive(
-        from: HealthMetrics(hrvRMSSD: 80, sleepEfficiency: 0.8), at: s2Epoch)
-    let threeZeroWk = HealthSnapshot.derive(
-        from: HealthMetrics(
-            hrvRMSSD: 80, sleepEfficiency: 0.8, activeWorkoutEnergyKilocalories: 0), at: s2Epoch)
-    expect(
-        twoPresent.fatigue.value > threeZeroWk.fatigue.value,
-        "absent workout excluded from FATIGUE avg, not counted as a 0 reading")
-
-    // RB #15 (Gemini PR#3 round 2) — a finite input whose transform OVERFLOWS to
-    // non-finite is treated as an invalid/missing signal (excluded), preserving the
-    // finite guarantee — never clamped to a bound nor propagated.
-    let overflow = HealthSnapshot.derive(
-        from: HealthMetrics(sleepEfficiency: .greatestFiniteMagnitude), at: s2Epoch)
-    expect(
-        overflow.fatigue.value == 50.0,
-        "transform-overflow sleep excluded → all-missing FATIGUE 50, not clamped to 100")
-    expect(overflow.fatigue.value.isFinite, "transform-overflow → FATIGUE still finite")
-
-    // RB #4 — pathological inputs (NaN / inf / huge / negative) → clamped finite.
-    let nan = HealthSnapshot.derive(
-        from: HealthMetrics(
-            restingHeartRate: .nan, hrvRMSSD: .nan, sleepEfficiency: .nan,
-            activeWorkoutEnergyKilocalories: .nan), at: s2Epoch)
-    expect(
-        nan.fatigue.value.isFinite && (0...100).contains(nan.fatigue.value),
-        "NaN inputs → FATIGUE finite in 0...100")
-    expect(
-        nan.strength.value.isFinite && (0...100).contains(nan.strength.value),
-        "NaN inputs → STRENGTH finite in 0...100")
-    let extreme = HealthSnapshot.derive(
-        from: HealthMetrics(
-            hrvRMSSD: .infinity, sleepEfficiency: 9,
-            activeWorkoutEnergyKilocalories: 1_000_000), at: s2Epoch)
-    expect((0...100).contains(extreme.fatigue.value), "huge/inf inputs → FATIGUE ≤ 100")
-    expect((0...100).contains(extreme.strength.value), "huge inputs → STRENGTH ≤ 100")
-    let negative = HealthSnapshot.derive(
-        from: HealthMetrics(
-            hrvRMSSD: -50, sleepEfficiency: -1, activeWorkoutEnergyKilocalories: -100),
+    // FATIGUE source = HRV only (ADR-002 Decision 1). Calibrating (empty / <14 finite baseline,
+    // OR nil/non-finite today-HRV) → neutral 50.
+    expect(empty.fatigue == 50.0, "empty baseline → FATIGUE 50 (calibrating)")
+    let fewBaseline = DailyHealthInput.derive(
+        from: HealthMetrics(hrvRMSSD: 80), hrvBaseline: Array(repeating: 50.0, count: 10),
         at: s2Epoch)
-    expect((0...100).contains(negative.fatigue.value), "negative inputs → FATIGUE ≥ 0")
-    expect((0...100).contains(negative.strength.value), "negative inputs → STRENGTH ≥ 0")
+    expect(fewBaseline.fatigue == 50.0, "<14 finite baseline → FATIGUE 50 (calibrating)")
+    let noTodayHRV = DailyHealthInput.derive(
+        from: HealthMetrics(sleepEfficiency: 0.9), hrvBaseline: baseline, at: s2Epoch)
+    expect(noTodayHRV.fatigue == 50.0, "nil today-HRV → FATIGUE 50 (calibrating)")
 
-    // RB #5 — FATIGUE strictly increases with HRV (other inputs held nil).
-    let loHRV = HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 0), at: s2Epoch)
-    let hiHRV = HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 100), at: s2Epoch)
-    expect(loHRV.fatigue.value < hiHRV.fatigue.value, "FATIGUE strictly increases with HRV")
+    // FATIGUE = baseline-relative HRV reading: strictly increases with today-HRV (baseline fixed);
+    // below/above the baseline mean reads </> 50.
+    let loHRV = DailyHealthInput.derive(
+        from: HealthMetrics(hrvRMSSD: 42), hrvBaseline: baseline, at: s2Epoch)
+    let hiHRV = DailyHealthInput.derive(
+        from: HealthMetrics(hrvRMSSD: 66), hrvBaseline: baseline, at: s2Epoch)
+    expect(loHRV.fatigue < hiHRV.fatigue, "FATIGUE strictly increases with today-HRV")
+    expect(loHRV.fatigue < 50 && hiHRV.fatigue > 50, "FATIGUE below/above baseline mean reads </> 50")
 
-    // RB #6 — FATIGUE strictly increases with sleep efficiency (others nil).
-    let loSleep = HealthSnapshot.derive(from: HealthMetrics(sleepEfficiency: 0), at: s2Epoch)
-    let hiSleep = HealthSnapshot.derive(from: HealthMetrics(sleepEfficiency: 1), at: s2Epoch)
-    expect(loSleep.fatigue.value < hiSleep.fatigue.value, "FATIGUE strictly increases with sleep")
-
-    // RB #7 — FATIGUE strictly increases with workout energy (others nil; workout → FATIGUE+X).
-    let loWk = HealthSnapshot.derive(
-        from: HealthMetrics(activeWorkoutEnergyKilocalories: 0), at: s2Epoch)
-    let hiWk = HealthSnapshot.derive(
-        from: HealthMetrics(activeWorkoutEnergyKilocalories: 600), at: s2Epoch)
-    expect(loWk.fatigue.value < hiWk.fatigue.value, "FATIGUE strictly increases with workout")
+    // FATIGUE invariant to sleep AND workout (ADR-002 Decision 1: neither feeds FATIGUE anymore).
+    // REPLACES the old S2 RB#6/#7 which asserted the opposite — the shipped spec violation.
+    let fBaseM = HealthMetrics(
+        restingHeartRate: 60, hrvRMSSD: 55, sleepEfficiency: 0.5,
+        activeWorkoutEnergyKilocalories: 300)
+    let fVarySleep = HealthMetrics(
+        restingHeartRate: 60, hrvRMSSD: 55, sleepEfficiency: 0.95,
+        activeWorkoutEnergyKilocalories: 300)
+    let fVaryWk = HealthMetrics(
+        restingHeartRate: 60, hrvRMSSD: 55, sleepEfficiency: 0.5,
+        activeWorkoutEnergyKilocalories: 50)
+    let fBase = DailyHealthInput.derive(from: fBaseM, hrvBaseline: baseline, at: s2Epoch).fatigue
+    expect(
+        DailyHealthInput.derive(from: fVarySleep, hrvBaseline: baseline, at: s2Epoch).fatigue
+            == fBase, "FATIGUE invariant to sleep efficiency")
+    expect(
+        DailyHealthInput.derive(from: fVaryWk, hrvBaseline: baseline, at: s2Epoch).fatigue == fBase,
+        "FATIGUE invariant to workout energy")
 
     // RB #8 — STRENGTH strictly increases with workout energy.
-    expect(loWk.strength.value < hiWk.strength.value, "STRENGTH strictly increases with workout")
+    let loWk = DailyHealthInput.derive(
+        from: HealthMetrics(activeWorkoutEnergyKilocalories: 0), hrvBaseline: baseline, at: s2Epoch)
+    let hiWk = DailyHealthInput.derive(
+        from: HealthMetrics(activeWorkoutEnergyKilocalories: 600), hrvBaseline: baseline,
+        at: s2Epoch)
+    expect(loWk.strength < hiWk.strength, "STRENGTH strictly increases with workout energy")
 
-    // RB #13 — STRENGTH depends ONLY on workout energy (PRODUCT §9): invariant to each
-    // non-workout input varied INDIVIDUALLY (single-var, so a canceling term can't hide).
-    let strBase = HealthSnapshot.derive(
+    // RB #4 — STRENGTH bounded/finite under pathological workout (huge / negative / NaN).
+    let extremeWk = DailyHealthInput.derive(
+        from: HealthMetrics(activeWorkoutEnergyKilocalories: 1_000_000), hrvBaseline: baseline,
+        at: s2Epoch)
+    expect((0...100).contains(extremeWk.strength), "huge workout → STRENGTH <= 100")
+    let negWk = DailyHealthInput.derive(
+        from: HealthMetrics(activeWorkoutEnergyKilocalories: -100), hrvBaseline: baseline,
+        at: s2Epoch)
+    expect((0...100).contains(negWk.strength), "negative workout → STRENGTH >= 0")
+    let nanAll = DailyHealthInput.derive(
         from: HealthMetrics(
-            restingHeartRate: 60, hrvRMSSD: 20, sleepEfficiency: 0.5,
-            activeWorkoutEnergyKilocalories: 300), at: s2Epoch)
-    let strVaryHRV = HealthSnapshot.derive(
+            restingHeartRate: .nan, hrvRMSSD: .nan, sleepEfficiency: .nan,
+            activeWorkoutEnergyKilocalories: .nan), hrvBaseline: baseline, at: s2Epoch)
+    for v in [nanAll.fatigue, nanAll.strength, nanAll.hunger] {
+        expect(v.isFinite && (0...100).contains(v), "NaN metrics → daily input finite in 0...100")
+    }
+
+    // RB #13 — STRENGTH depends ONLY on workout energy: invariant to each non-workout input
+    // varied INDIVIDUALLY, and to the HRV baseline.
+    let sBase = DailyHealthInput.derive(from: fBaseM, hrvBaseline: baseline, at: s2Epoch).strength
+    let sVaryHRV = DailyHealthInput.derive(
         from: HealthMetrics(
             restingHeartRate: 60, hrvRMSSD: 90, sleepEfficiency: 0.5,
-            activeWorkoutEnergyKilocalories: 300), at: s2Epoch)
-    let strVarySleep = HealthSnapshot.derive(
+            activeWorkoutEnergyKilocalories: 300), hrvBaseline: baseline, at: s2Epoch).strength
+    let sVaryRHR = DailyHealthInput.derive(
         from: HealthMetrics(
-            restingHeartRate: 60, hrvRMSSD: 20, sleepEfficiency: 0.95,
-            activeWorkoutEnergyKilocalories: 300), at: s2Epoch)
-    let strVaryRHR = HealthSnapshot.derive(
-        from: HealthMetrics(
-            restingHeartRate: 40, hrvRMSSD: 20, sleepEfficiency: 0.5,
-            activeWorkoutEnergyKilocalories: 300), at: s2Epoch)
-    expect(strVaryHRV.strength.value == strBase.strength.value, "STRENGTH invariant to HRV alone")
-    expect(
-        strVarySleep.strength.value == strBase.strength.value, "STRENGTH invariant to sleep alone")
-    expect(strVaryRHR.strength.value == strBase.strength.value, "STRENGTH invariant to RHR alone")
+            restingHeartRate: 40, hrvRMSSD: 55, sleepEfficiency: 0.5,
+            activeWorkoutEnergyKilocalories: 300), hrvBaseline: baseline, at: s2Epoch).strength
+    let sVarySleep = DailyHealthInput.derive(from: fVarySleep, hrvBaseline: baseline, at: s2Epoch)
+        .strength
+    let sNoBaseline = DailyHealthInput.derive(from: fBaseM, hrvBaseline: [], at: s2Epoch).strength
+    expect(sVaryHRV == sBase, "STRENGTH invariant to HRV alone")
+    expect(sVaryRHR == sBase, "STRENGTH invariant to RHR alone")
+    expect(sVarySleep == sBase, "STRENGTH invariant to sleep alone")
+    expect(sNoBaseline == sBase, "STRENGTH invariant to HRV baseline")
 
-    // RB #10 — HUNGER neutral placeholder = 50.0, independent of metrics (incl. NaN/inf).
-    expect(snap.hunger.value == 50.0, "HUNGER == 50.0 placeholder")
-    expect(empty.hunger.value == 50.0, "HUNGER == 50.0 even with no metrics")
-    expect(nan.hunger.value == 50.0, "HUNGER == 50.0 under NaN metrics")
-    expect(extreme.hunger.value == 50.0, "HUNGER == 50.0 under inf/huge metrics")
-    expect(negative.hunger.value == 50.0, "HUNGER == 50.0 under negative metrics")
-
-    // RB #11 — HEALTH aggregate delegates to HealthStat over derived sub-stats.
+    // RB #10 — HUNGER neutral placeholder = 50.0, independent of metrics (incl. NaN) & baseline.
+    expect(empty.hunger == 50.0, "HUNGER == 50.0 with no metrics")
+    expect(nanAll.hunger == 50.0, "HUNGER == 50.0 under NaN metrics")
     expect(
-        snap.healthValue
-            == HealthStat.value(
-                hunger: snap.hunger.value, fatigue: snap.fatigue.value,
-                strength: snap.strength.value), "healthValue delegates to HealthStat.value")
-    expect(
-        snap.healthLevel
-            == HealthStat.level(
-                hunger: snap.hunger.value, fatigue: snap.fatigue.value,
-                strength: snap.strength.value), "healthLevel delegates to HealthStat.level")
+        DailyHealthInput.derive(
+            from: HealthMetrics(activeWorkoutEnergyKilocalories: 300), hrvBaseline: baseline,
+            at: s2Epoch).hunger == 50.0, "HUNGER == 50.0 regardless of workout")
 }
 
-// RB #12 — async seam: source → latestMetrics() → derive == direct derive.
-await group("health-snapshot-source") {
+// RB #12 — async seam: source → latestMetrics() → DailyHealthInput.derive == direct derive.
+await group("daily-input-source") {
     let m = HealthMetrics(
         restingHeartRate: 55, hrvRMSSD: 45, sleepEfficiency: 0.9,
         activeWorkoutEnergyKilocalories: 300)
+    let baseline = (0..<28).map { 40.0 + Double($0) }
     let source = FakeHealthDataSource(stored: m)
     let fetched = await source.latestMetrics()
-    let viaSource = HealthSnapshot.derive(from: fetched, at: s2Epoch)
-    let direct = HealthSnapshot.derive(from: m, at: s2Epoch)
+    let viaSource = DailyHealthInput.derive(from: fetched, hrvBaseline: baseline, at: s2Epoch)
+    let direct = DailyHealthInput.derive(from: m, hrvBaseline: baseline, at: s2Epoch)
     expect(viaSource.capturedAt == direct.capturedAt, "source round-trip capturedAt matches")
-    expect(viaSource.metrics == direct.metrics, "source round-trip metrics match direct derive")
+    expect(viaSource.fatigue == direct.fatigue, "source round-trip FATIGUE matches direct derive")
     expect(
-        viaSource.fatigue.value == direct.fatigue.value,
-        "source round-trip FATIGUE matches direct derive")
+        viaSource.strength == direct.strength, "source round-trip STRENGTH matches direct derive")
+    expect(viaSource.hunger == direct.hunger, "source round-trip HUNGER matches direct derive")
+}
+
+// MARK: - Stage 1 · Slice 6b — EWMA accumulation primitive (RED)
+//
+// Time-aware exponential accumulation for HEALTH sub-stats (ADR-002 Decision 2):
+// retentionᐞ = 0.5^(Δt / halfLife); result = retentionᐞ·previous + (1−retentionᐞ)·input.
+// Pure core; cold start is the store's job (seeds accumulated = dailyInput).
+
+group("health-ewma") {
+    let hl = 4.0
+    // Δt = 0 → retention 1 → unchanged (no new info without elapsed time).
     expect(
-        viaSource.strength.value == direct.strength.value,
-        "source round-trip STRENGTH matches direct derive")
+        EWMA.accumulate(previous: 80, dailyInput: 20, elapsedDays: 0, halfLifeDays: hl) == 80,
+        "EWMA Δt=0 → value unchanged")
+    // One half-life → retention 0.5 → exact midpoint.
     expect(
-        viaSource.hunger.value == direct.hunger.value,
-        "source round-trip HUNGER matches direct derive")
+        EWMA.accumulate(previous: 80, dailyInput: 20, elapsedDays: hl, halfLifeDays: hl) == 50,
+        "EWMA one half-life → midpoint (80,20) → 50")
+    // Monotone toward input: larger dailyInput → larger result (previous, Δt fixed).
+    let loIn = EWMA.accumulate(previous: 50, dailyInput: 10, elapsedDays: 2, halfLifeDays: hl)
+    let hiIn = EWMA.accumulate(previous: 50, dailyInput: 90, elapsedDays: 2, halfLifeDays: hl)
+    expect(loIn < hiIn, "EWMA monotone increasing in dailyInput")
+    // Convex-combination bounds → within [dailyInput, previous], hence finite & in 0...100.
+    let blended = EWMA.accumulate(previous: 80, dailyInput: 20, elapsedDays: 3, halfLifeDays: hl)
+    expect((20...80).contains(blended), "EWMA result within [dailyInput, previous]")
+    // Multi-day gap decays MORE than one step (toward input 0): bigger Δt ⇒ closer to input.
+    let step1 = EWMA.accumulate(previous: 80, dailyInput: 0, elapsedDays: 1, halfLifeDays: hl)
+    let step5 = EWMA.accumulate(previous: 80, dailyInput: 0, elapsedDays: 5, halfLifeDays: hl)
+    expect(step5 < step1, "EWMA: larger gap decays more (closer to input)")
+    // Negative Δt clamps to 0 → unchanged.
+    expect(
+        EWMA.accumulate(previous: 80, dailyInput: 20, elapsedDays: -3, halfLifeDays: hl) == 80,
+        "EWMA negative Δt clamped to 0 → unchanged")
+    // Finite under pathological Δt (infinite elapsed → fully decays to input).
+    let infDt = EWMA.accumulate(
+        previous: 80, dailyInput: 20, elapsedDays: .infinity, halfLifeDays: hl)
+    expect(infDt.isFinite && (0...100).contains(infDt), "EWMA finite under infinite Δt")
+}
+
+// MARK: - Stage 1 · Slice 6b — baseline-relative HRV recovery reading (RED)
+//
+// The Recovery HRV term, extracted + reused as the FATIGUE daily input (ADR-002
+// Decision 3). Neutral 50 while calibrating (<14 finite baseline, nil/non-finite
+// today-HRV, or std < 1 ms). Must equal the HRV term embedded in Recovery.score.
+
+group("health-hrv-recovery-reading") {
+    let baselineVaried = (0..<28).map { 40.0 + Double($0) }  // mean 53.5, std > 1
+    let baselineFew = Array(repeating: 50.0, count: 10)
+    let baselineZeroVar = Array(repeating: 50.0, count: 28)
+
+    // Calibrating → neutral 50.
+    expect(
+        Recovery.hrvRecoveryReading(todayHRV: 55, baseline: baselineFew) == 50,
+        "<14 finite baseline → 50 (calibrating)")
+    expect(
+        Recovery.hrvRecoveryReading(todayHRV: nil, baseline: baselineVaried) == 50,
+        "nil today-HRV → 50")
+    expect(
+        Recovery.hrvRecoveryReading(todayHRV: .nan, baseline: baselineVaried) == 50,
+        "NaN today-HRV → 50")
+    expect(
+        Recovery.hrvRecoveryReading(todayHRV: 60, baseline: baselineZeroVar) == 50,
+        "std < 1 baseline → 50 (neutral)")
+
+    // Scored: strictly increases with today-HRV; above/below mean ⇒ >/< 50; clamped 0...100.
+    let below = Recovery.hrvRecoveryReading(todayHRV: 42, baseline: baselineVaried)
+    let above = Recovery.hrvRecoveryReading(todayHRV: 66, baseline: baselineVaried)
+    expect(below < above, "reading strictly increases with today-HRV")
+    expect(below < 50 && above > 50, "below/above baseline mean reads </> 50")
+    expect((0...100).contains(below) && (0...100).contains(above), "reading clamped 0...100")
+
+    // Consistency — equals the HRV term embedded in Recovery.score. With RHR & sleep absent both
+    // default to 50, so score = 0.5·hrvTerm + 0.25·50 + 0.25·50 ⇒ hrvTerm = (value − 25) / 0.5.
+    let scored = Recovery.score(
+        for: recoverySnap(HealthMetrics(hrvRMSSD: 66)), hrvBaseline: baselineVaried)
+    if case .scored(let value, _) = scored {
+        expect(
+            abs((value - 25.0) / 0.5 - above) < 1e-9,
+            "hrvRecoveryReading == the HRV term inside Recovery.score")
+    } else {
+        expect(false, "expected .scored for full baseline + finite HRV")
+    }
 }
 
 // MARK: - Stage 1 · Slice 3 — Recovery score (RED)
@@ -306,7 +367,7 @@ await group("health-snapshot-source") {
 // (strict per-input contribution, band reachability, no-double-count). S3 CONTRACT.
 
 private func recoverySnap(_ metrics: HealthMetrics) -> HealthSnapshot {
-    HealthSnapshot.derive(from: metrics, at: s2Epoch)
+    HealthSnapshot(capturedAt: s2Epoch, metrics: metrics)
 }
 
 @MainActor
@@ -531,7 +592,7 @@ group("recovery-score") {
     // RB #10c (Gemini PR#4 MEDIUM) — NaN must not fall through to .green (best state).
     expect(Recovery.band(for: .nan) == .red, "NaN value → RED (defensive, never .green)")
 
-    // RB #11 — no double-count: vary workout energy (changes snapshot.fatigue via derive);
+    // RB #11 — no double-count: vary workout energy (carried in metrics);
     // Recovery reads only HRV/RHR/sleep, so it must be unchanged.
     let noWk = Recovery.score(
         for: recoverySnap(
@@ -559,7 +620,7 @@ group("recovery-score") {
 // breaking these tests. S4 CONTRACT.
 
 private func strainSnap(_ metrics: HealthMetrics) -> HealthSnapshot {
-    HealthSnapshot.derive(from: metrics, at: s2Epoch)
+    HealthSnapshot(capturedAt: s2Epoch, metrics: metrics)
 }
 
 @MainActor

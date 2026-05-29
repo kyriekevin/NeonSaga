@@ -4,10 +4,11 @@ import XCTest
 
 @testable import NeonSaga
 
-// S6 RED tests — pin HealthDetailViewModel's display-model mapping (CONTRACT S6).
-// Asserts the VM's semantic fields (band enum + numeric fractions + placeholder
-// strings), NOT Color or rendered geometry. Fails to build until the green commit
-// adds HealthDetailViewModel, SubStatRow, and HealthSnapshotStore.recentHRVBaseline.
+// S6 VM display tests, migrated for the S6b construction API (records built via
+// HealthSnapshotRecord(capturedAt:metrics:hunger:fatigue:strength:)). Asserts the VM's
+// semantic fields (band enum + numeric fractions + placeholder strings), NOT Color or
+// geometry. Recovery / Strain read the record's raw metrics; sub-stat rows read the
+// record's ACCUMULATED stored values — both unchanged in meaning here.
 final class HealthDetailViewModelTests: XCTestCase {
 
     private let base = Date(timeIntervalSince1970: 1_700_000_000)
@@ -19,13 +20,25 @@ final class HealthDetailViewModelTests: XCTestCase {
         return HealthSnapshotStore(context: ModelContext(container))
     }
 
-    /// Save `count` prior-day snapshots strictly before `base`, each with HRV 40.
+    /// Seeds one record (raw metrics + neutral-placeholder accumulated values) at `at`.
+    @MainActor
+    private func seed(
+        _ store: HealthSnapshotStore, _ metrics: HealthMetrics, at when: Date,
+        hunger: Double = 50, fatigue: Double = 50, strength: Double = 0
+    ) throws {
+        try store.save(
+            HealthSnapshotRecord(
+                capturedAt: when, metrics: metrics,
+                hunger: hunger, fatigue: fatigue, strength: strength))
+    }
+
+    /// Save `count` prior-day records strictly before `base`, each with raw HRV 40.
     @MainActor
     private func seedPriorDays(_ store: HealthSnapshotStore, count: Int) throws {
         guard count > 0 else { return }
         for i in 1...count {
             let day = base.addingTimeInterval(-86_400 * Double(i))
-            try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 40), at: day))
+            try seed(store, HealthMetrics(hrvRMSSD: 40), at: day)
         }
     }
 
@@ -39,9 +52,9 @@ final class HealthDetailViewModelTests: XCTestCase {
         for i in 1...14 {
             let day = base.addingTimeInterval(-86_400 * Double(i))
             let hrv: Double = i <= 7 ? 30 : 50
-            try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: hrv), at: day))
+            try seed(store, HealthMetrics(hrvRMSSD: hrv), at: day)
         }
-        try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 50), at: base))
+        try seed(store, HealthMetrics(hrvRMSSD: 50), at: base)
     }
 
     // MARK: - Empty store (behavior 6)
@@ -82,7 +95,7 @@ final class HealthDetailViewModelTests: XCTestCase {
         // Latest record carries a finite HRV too. If the scored record's own HRV were
         // folded into its baseline, 13 + 1 = 14 would falsely score; .calibrating(13)
         // proves recentHRVBaseline excludes the record being scored (Codex B2).
-        try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 45), at: base))
+        try seed(store, HealthMetrics(hrvRMSSD: 45), at: base)
 
         let vm = HealthDetailViewModel(store: store)
         XCTAssertEqual(vm.recovery, .calibrating(daysOfData: 13))
@@ -93,12 +106,10 @@ final class HealthDetailViewModelTests: XCTestCase {
     func testNilTodayHRVCalibratesDespiteSufficientBaseline() throws {
         let store = try makeStore()
         try seedPriorDays(store, count: 14)
-        // Latest snapshot has NO today-HRV (workout energy only). Recovery.score gates
-        // on a finite today-HRV in addition to ≥14 baseline samples, so this must
-        // calibrate at the full baseline count (Codex tests-review F2).
-        try store.save(
-            HealthSnapshot.derive(
-                from: HealthMetrics(activeWorkoutEnergyKilocalories: 100), at: base))
+        // Latest record has NO today-HRV (workout energy only). Recovery.score gates on
+        // a finite today-HRV in addition to ≥14 baseline samples, so this must calibrate
+        // at the full baseline count (Codex tests-review F2).
+        try seed(store, HealthMetrics(activeWorkoutEnergyKilocalories: 100), at: base)
 
         let vm = HealthDetailViewModel(store: store)
         XCTAssertEqual(vm.recovery, .calibrating(daysOfData: 14))
@@ -121,9 +132,7 @@ final class HealthDetailViewModelTests: XCTestCase {
     func testStrainScoredFromLatestWorkoutEnergy() throws {
         let store = try makeStore()
         // 300 kcal == Strain's half-saturation constant → 21·300/600 == 10.5 exactly.
-        try store.save(
-            HealthSnapshot.derive(
-                from: HealthMetrics(activeWorkoutEnergyKilocalories: 300), at: base))
+        try seed(store, HealthMetrics(activeWorkoutEnergyKilocalories: 300), at: base)
 
         let vm = HealthDetailViewModel(store: store)
         guard case .scored(let value) = vm.strain else {
@@ -137,7 +146,7 @@ final class HealthDetailViewModelTests: XCTestCase {
     @MainActor
     func testStrainNoDataWhenWorkoutEnergyMissing() throws {
         let store = try makeStore()
-        try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 40), at: base))
+        try seed(store, HealthMetrics(hrvRMSSD: 40), at: base)
 
         let vm = HealthDetailViewModel(store: store)
         XCTAssertEqual(vm.strain, .noData)
@@ -152,12 +161,10 @@ final class HealthDetailViewModelTests: XCTestCase {
         let container = try ModelContainer(for: HealthSnapshotRecord.self, configurations: config)
         let context = ModelContext(container)
         let store = HealthSnapshotStore(context: context)
-        let snap = HealthSnapshot.derive(from: HealthMetrics(), at: base)
-        let rec = HealthSnapshotRecord(from: snap)
-        rec.capturedAt = base
-        rec.hungerValue = 40
-        rec.fatigueValue = 70
-        rec.strengthValue = 88
+        // Seed a record with explicit ACCUMULATED sub-stat values; the VM displays them.
+        let rec = HealthSnapshotRecord(
+            capturedAt: base, metrics: HealthMetrics(),
+            hunger: 40, fatigue: 70, strength: 88)
         context.insert(rec)
         try context.save()
 
@@ -188,9 +195,8 @@ final class HealthDetailViewModelTests: XCTestCase {
     @MainActor
     func testHungerRendersNeutralStageOneValue() throws {
         let store = try makeStore()
-        try store.save(
-            HealthSnapshot.derive(
-                from: HealthMetrics(activeWorkoutEnergyKilocalories: 200), at: base))
+        // A real record carries the accumulated HUNGER placeholder (50) until Stage 3.
+        try seed(store, HealthMetrics(activeWorkoutEnergyKilocalories: 200), at: base, hunger: 50)
 
         let vm = HealthDetailViewModel(store: store)
         let hunger = try XCTUnwrap(vm.subStats.first { $0.substat == .hunger })
@@ -205,7 +211,7 @@ final class HealthDetailViewModelTests: XCTestCase {
         let vm = HealthDetailViewModel(store: store)
         XCTAssertFalse(vm.hasData)
 
-        try store.save(HealthSnapshot.derive(from: HealthMetrics(hrvRMSSD: 40), at: base))
+        try seed(store, HealthMetrics(hrvRMSSD: 40), at: base)
         vm.refresh()
 
         XCTAssertTrue(vm.hasData)

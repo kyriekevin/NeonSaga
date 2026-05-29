@@ -246,6 +246,19 @@ final class HealthAccumulationStoreTests: XCTestCase {
             try store.allRecords().count, 1, "same LA local date across the DST jump → one record")
     }
 
+    @MainActor
+    func testDSTBoundaryDifferentLocalDateLabelsStaySeparate() async throws {
+        let store = try makeStore(utc)
+        // Straddle the same 2026-03-08 spring-forward but on DIFFERENT local dates:
+        // 2026-03-07 23:00 (PST, label 03-07) and 2026-03-08 03:00 (PDT, label 03-08;
+        // 03:00 is the first valid time after the 02:00→03:00 jump) → TWO records.
+        _ = try await write(store, HealthMetrics(hrvRMSSD: 50), at: date(la, 2026, 3, 7, 23), in: la)
+        _ = try await write(store, HealthMetrics(hrvRMSSD: 60), at: date(la, 2026, 3, 8, 3), in: la)
+        XCTAssertEqual(
+            try store.allRecords().count, 2,
+            "different LA local dates across the DST jump → two records")
+    }
+
     // MARK: - Back-fill re-derives the affected suffix
 
     @MainActor

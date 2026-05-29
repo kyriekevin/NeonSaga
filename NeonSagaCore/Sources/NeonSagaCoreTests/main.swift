@@ -261,6 +261,8 @@ group("daily-health-input") {
     // RB #10 — HUNGER neutral placeholder = 50.0, independent of metrics (incl. NaN) & baseline.
     expect(empty.hunger == 50.0, "HUNGER == 50.0 with no metrics")
     expect(nanAll.hunger == 50.0, "HUNGER == 50.0 under NaN metrics")
+    expect(negWk.hunger == 50.0, "HUNGER == 50.0 under negative metrics")
+    expect(infWk.hunger == 50.0, "HUNGER == 50.0 under infinite metrics")
     expect(
         DailyHealthInput.derive(
             from: HealthMetrics(activeWorkoutEnergyKilocalories: 300), hrvBaseline: baseline,

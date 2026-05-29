@@ -225,6 +225,12 @@ group("daily-health-input") {
         from: HealthMetrics(activeWorkoutEnergyKilocalories: -100), hrvBaseline: baseline,
         at: s2Epoch)
     expect((0...100).contains(negWk.strength), "negative workout → STRENGTH >= 0")
+    let infWk = DailyHealthInput.derive(
+        from: HealthMetrics(activeWorkoutEnergyKilocalories: .infinity), hrvBaseline: baseline,
+        at: s2Epoch)
+    expect(
+        infWk.strength.isFinite && (0...100).contains(infWk.strength),
+        "infinite workout → STRENGTH finite in 0...100")
     let nanAll = DailyHealthInput.derive(
         from: HealthMetrics(
             restingHeartRate: .nan, hrvRMSSD: .nan, sleepEfficiency: .nan,
@@ -346,6 +352,19 @@ group("health-hrv-recovery-reading") {
     expect(below < above, "reading strictly increases with today-HRV")
     expect(below < 50 && above > 50, "below/above baseline mean reads </> 50")
     expect((0...100).contains(below) && (0...100).contains(above), "reading clamped 0...100")
+
+    // Clamp rails: an extreme today-HRV would blow the z-score past 0...100 without the clamp.
+    expect(
+        Recovery.hrvRecoveryReading(todayHRV: 1000, baseline: baselineVaried) == 100,
+        "today-HRV far above baseline clamps to 100")
+    expect(
+        Recovery.hrvRecoveryReading(todayHRV: -500, baseline: baselineVaried) == 0,
+        "today-HRV far below baseline clamps to 0")
+    // Non-finite baseline entries are EXCLUDED (>=14 finite remain) → finite, same as clean.
+    let dirtyBaseline = baselineVaried + [.nan, .infinity, -.infinity]
+    expect(
+        Recovery.hrvRecoveryReading(todayHRV: 66, baseline: dirtyBaseline) == above,
+        "non-finite baseline entries excluded → same reading as the clean baseline")
 
     // Consistency — equals the HRV term embedded in Recovery.score. With RHR & sleep absent both
     // default to 50, so score = 0.5·hrvTerm + 0.25·50 + 0.25·50 ⇒ hrvTerm = (value − 25) / 0.5.

@@ -114,24 +114,90 @@ final class HealthAccumulationStoreTests: XCTestCase {
             "a longer gap decays STRENGTH more (closer to the rest-day input)")
     }
 
-    // MARK: - Write-path idempotence: upsert ONE record per local-calendar stat-day
+    // MARK: - FATIGUE at the store: HRV-only, baseline-relative, accumulated
 
     @MainActor
-    func testSameStatDayUpsertsToOneRecord() async throws {
-        let store = try makeStore(utc)
-        // Two writes on the same UTC calendar day (09:00 and 21:00) → ONE record.
-        _ = try await write(store, HealthMetrics(hrvRMSSD: 50), at: date(utc, 2026, 6, 1, 9), in: utc)
-        _ = try await write(store, HealthMetrics(hrvRMSSD: 60), at: date(utc, 2026, 6, 1, 21), in: utc)
-        XCTAssertEqual(try store.allRecords().count, 1, "two writes same stat-day → one record")
+    func testFatigueIgnoresSleepAndWorkoutAtStore() async throws {
+        // Two stores with an identical >=14-day HRV baseline; the test day differs ONLY in
+        // sleep + workout (same poor HRV). FATIGUE must be identical — ADR-002 Decision 1:
+        // neither sleep nor workout feeds FATIGUE.
+        func fatigueOnTestDay(_ testDay: HealthMetrics) async throws -> Double {
+            let store = try makeStore(utc)
+            for i in 1...14 {
+                let hrv: Double = (i % 2 == 0) ? 60 : 40  // mean 50, std > 1
+                _ = try await write(store, HealthMetrics(hrvRMSSD: hrv), at: date(utc, 2026, 6, i), in: utc)
+            }
+            return try await write(store, testDay, at: date(utc, 2026, 6, 15), in: utc).fatigueValue
+        }
+        let lowLoad = try await fatigueOnTestDay(
+            HealthMetrics(hrvRMSSD: 30, sleepEfficiency: 0.2, activeWorkoutEnergyKilocalories: 0))
+        let highLoad = try await fatigueOnTestDay(
+            HealthMetrics(hrvRMSSD: 30, sleepEfficiency: 0.95, activeWorkoutEnergyKilocalories: 600))
+        XCTAssertEqual(lowLoad, highLoad, accuracy: 1e-9, "FATIGUE ignores sleep + workout at the store")
+        XCTAssertLessThan(lowLoad, 50, "poor HRV (below baseline mean) → FATIGUE below neutral 50")
     }
 
     @MainActor
-    func testExactDuplicateCapturedAtUpsertsToOneRecord() async throws {
+    func testFatigueAccumulatesViaTimeAwareEWMAFromBaselineRelativeReading() async throws {
+        let store = try makeStore(utc)
+        for i in 1...14 {
+            let hrv: Double = (i % 2 == 0) ? 60 : 40
+            _ = try await write(store, HealthMetrics(hrvRMSSD: hrv), at: date(utc, 2026, 6, i), in: utc)
+        }
+        let r15 = try await write(store, HealthMetrics(hrvRMSSD: 35), at: date(utc, 2026, 6, 15), in: utc)
+        let r16 = try await write(store, HealthMetrics(hrvRMSSD: 35), at: date(utc, 2026, 6, 16), in: utc)
+        // Day-16 FATIGUE = one time-aware EWMA step from day-15's accumulated value toward
+        // day-16's baseline-relative HRV reading (using the store's own baseline + primitives).
+        let baseline16 = try store.recentHRVBaseline(before: date(utc, 2026, 6, 16))
+        let input16 = Recovery.hrvRecoveryReading(todayHRV: 35, baseline: baseline16)
+        let expected = EWMA.accumulate(
+            previous: r15.fatigueValue, dailyInput: input16,
+            elapsedDays: 1, halfLifeDays: HealthAccumulation.fatigueHalfLifeDays)
+        XCTAssertEqual(r16.fatigueValue, expected, accuracy: 1e-9)
+    }
+
+    // MARK: - Write-path idempotence: upsert ONE record per local-calendar stat-day
+
+    @MainActor
+    func testSameStatDayUpsertsRetainingLatestWithoutDoubleAccumulating() async throws {
+        let store = try makeStore(utc)
+        // A prior stat-day gives a non-trivial accumulated STRENGTH to step from.
+        let day1 = try await write(
+            store, HealthMetrics(activeWorkoutEnergyKilocalories: 600), at: date(utc, 2026, 6, 1),
+            in: utc)
+        // Two writes on 2026-06-02 (09:00 then 21:00) collapse to ONE record that retains the
+        // LATEST raw metrics and accumulates a SINGLE step from day 1 (no double-count).
+        _ = try await write(
+            store, HealthMetrics(activeWorkoutEnergyKilocalories: 0), at: date(utc, 2026, 6, 2, 9),
+            in: utc)
+        let evening = try await write(
+            store, HealthMetrics(activeWorkoutEnergyKilocalories: 300), at: date(utc, 2026, 6, 2, 21),
+            in: utc)
+
+        let all = try store.allRecords()
+        XCTAssertEqual(all.count, 2, "day 1 + the single upserted day-2 record")
+        XCTAssertEqual(
+            evening.activeWorkoutEnergyKilocalories, 300, "latest same-day raw metrics retained")
+        let elapsed = evening.capturedAt.timeIntervalSince(day1.capturedAt) / 86_400.0
+        let expected = EWMA.accumulate(
+            previous: day1.strengthValue,
+            dailyInput: DailyHealthInput.derive(
+                from: HealthMetrics(activeWorkoutEnergyKilocalories: 300), hrvBaseline: [],
+                at: evening.capturedAt).strength,
+            elapsedDays: elapsed, halfLifeDays: HealthAccumulation.strengthHalfLifeDays)
+        XCTAssertEqual(
+            evening.strengthValue, expected, accuracy: 1e-9,
+            "single EWMA step from day 1 to the latest same-day input, not doubled")
+    }
+
+    @MainActor
+    func testExactDuplicateCapturedAtUpsertsRetainingLatest() async throws {
         let store = try makeStore(utc)
         let t = date(utc, 2026, 6, 1, 12)
         _ = try await write(store, HealthMetrics(hrvRMSSD: 50), at: t, in: utc)
         _ = try await write(store, HealthMetrics(hrvRMSSD: 60), at: t, in: utc)
         XCTAssertEqual(try store.allRecords().count, 1, "identical capturedAt → one record")
+        XCTAssertEqual(try store.latest()?.hrvRMSSD, 60, "latest write's raw metrics retained")
     }
 
     @MainActor
@@ -166,6 +232,18 @@ final class HealthAccumulationStoreTests: XCTestCase {
         XCTAssertEqual(
             try store.allRecords().count, 2,
             "same instant, different local-date labels → two records")
+    }
+
+    @MainActor
+    func testDSTBoundarySameLocalDateLabelCollapses() async throws {
+        let store = try makeStore(utc)
+        // 2026-03-08 is US spring-forward (02:00→03:00 PDT). Two LA writes straddling the
+        // skipped hour share the (y,m,d) label 03-08 → ONE record. 01:00 (PST) and 23:00
+        // (PDT) are both real local times (avoids the nonexistent 02:00–02:59 gap).
+        _ = try await write(store, HealthMetrics(hrvRMSSD: 50), at: date(la, 2026, 3, 8, 1), in: la)
+        _ = try await write(store, HealthMetrics(hrvRMSSD: 60), at: date(la, 2026, 3, 8, 23), in: la)
+        XCTAssertEqual(
+            try store.allRecords().count, 1, "same LA local date across the DST jump → one record")
     }
 
     // MARK: - Back-fill re-derives the affected suffix

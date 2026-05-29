@@ -321,6 +321,10 @@ group("health-ewma") {
     let infDt = EWMA.accumulate(
         previous: 80, dailyInput: 20, elapsedDays: .infinity, halfLifeDays: hl)
     expect(infDt.isFinite && (0...100).contains(infDt), "EWMA finite under infinite Δt")
+    // Degenerate half-life (<=0) has no defined retention → falls back to dailyInput (no NaN).
+    expect(
+        EWMA.accumulate(previous: 80, dailyInput: 20, elapsedDays: 0, halfLifeDays: 0) == 20,
+        "degenerate half-life 0 → dailyInput (no NaN)")
 }
 
 // MARK: - Stage 1 · Slice 6b — baseline-relative HRV recovery reading (RED)

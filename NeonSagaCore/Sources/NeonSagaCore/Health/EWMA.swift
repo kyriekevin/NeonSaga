@@ -10,12 +10,17 @@ import Foundation
 /// seeds `accumulated = dailyInput` directly, not via this primitive.
 public enum EWMA {
     /// - `elapsedDays` < 0 is clamped to 0 (no negative decay).
-    /// - `halfLifeDays` must be > 0.
+    /// - `halfLifeDays` must be > 0; a non-positive / non-finite value has no defined
+    ///   retention and falls back to `dailyInput` (purely defensive — the shipped
+    ///   per-stat constants are always > 0, so this never trips; it guarantees the
+    ///   primitive never returns NaN or applies a retention > 1).
     /// - For 0...100 `previous`/`dailyInput`, the result stays within
     ///   `[min, max]` of the two — hence finite and in 0...100.
     public static func accumulate(
         previous: Double, dailyInput: Double, elapsedDays: Double, halfLifeDays: Double
     ) -> Double {
+        // Degenerate half-life → no defined retention; fall back to the daily input.
+        guard halfLifeDays.isFinite, halfLifeDays > 0 else { return dailyInput }
         // Clamp negative elapsed to 0 (no retroactive decay).
         let elapsed = max(elapsedDays, 0)
         // retention = 0.5^(elapsed / halfLifeDays). When elapsed is infinite, retention → 0.

@@ -80,14 +80,18 @@ import SwiftData
             affected = rec
         }
 
-        // Step 4: save raw metrics before reading baselines.
-        try context.save()
-
-        // Step 5: re-derive the accumulated suffix (full chain from index 0 — simple + correct).
-        try reAccumulateAll(affected: affected)
-
-        // Step 6: save accumulated values.
-        try context.save()
+        // Re-derive the full accumulated chain (index 0, ascending capturedAt) over the
+        // pending insert/upsert, then persist raw + accumulated in a SINGLE save so there is
+        // no partial-write window (Codex 2b). On failure, roll back so the context holds no
+        // dangling uncommitted mutations (an insert is discarded; an upsert's raw overwrite
+        // reverts) — leaving a consistent committed state.
+        do {
+            try reAccumulateAll(affected: affected)
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
 
         return affected
     }

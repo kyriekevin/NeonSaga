@@ -16,9 +16,10 @@ public enum EWMA {
     public static func accumulate(
         previous: Double, dailyInput: Double, elapsedDays: Double, halfLifeDays: Double
     ) -> Double {
-        // S6b RED stub — GREEN implements the time-aware formula (retention^Δt,
-        // negative-Δt clamp, finite guards). The sentinel fails the assertions so
-        // `make test-core` stays red until the real body lands.
-        0
+        // Clamp negative elapsed to 0 (no retroactive decay).
+        let elapsed = max(elapsedDays, 0)
+        // retention = 0.5^(elapsed / halfLifeDays). When elapsed is infinite, retention → 0.
+        let retention = pow(0.5, elapsed / halfLifeDays)
+        return retention * previous + (1 - retention) * dailyInput
     }
 }

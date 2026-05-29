@@ -43,20 +43,8 @@ public enum Recovery {
             return .calibrating(daysOfData: n)
         }
 
-        // 3. HRV term (weight 0.5) — baseline-normalised z-score.
-        let mean = finite.reduce(0.0, +) / Double(n)
-        let variance = finite.reduce(0.0) { $0 + ($1 - mean) * ($1 - mean) } / Double(n)
-        let std = variance.squareRoot()
-
-        let hrvTerm: Double
-        if std >= 1.0 && std.isFinite {
-            let z = (hrv - mean) / std
-            hrvTerm = (50.0 + z * 15.0).clamped(to: 0...100)
-        } else {
-            // Zero- or near-zero variance (std < 1.0 ms) → neutral; a tiny std would otherwise
-            // blow the z-score to the clamp rails on measurement noise. Today-HRV must not matter.
-            hrvTerm = 50.0
-        }
+        // 3. HRV term (weight 0.5) — delegate to the extracted pure function (DRY).
+        let hrvTerm = hrvRecoveryReading(todayHRV: hrv, baseline: hrvBaseline)
 
         // 4. Resting-HR term (weight 0.25) — lower is better, mapped over 40…100.
         let rhrTerm: Double
@@ -90,9 +78,21 @@ extension Recovery {
     /// than 14 finite baseline samples, OR baseline std < 1 ms. Above the baseline
     /// mean reads > 50, below reads < 50; the z-score is scaled by 15 and clamped.
     public static func hrvRecoveryReading(todayHRV: Double?, baseline: [Double]) -> Double {
-        // S6b RED stub — GREEN extracts the HRV-term logic from `score` and routes
-        // `score` through it (DRY). The sentinel fails the assertions so
-        // `make test-core` stays red until the real body lands.
-        0
+        // Filter baseline to finite entries only.
+        let finite = baseline.filter { $0.isFinite }
+        let n = finite.count
+
+        // Calibrating gate: nil/non-finite today-HRV OR < 14 finite baseline samples.
+        guard let hrv = todayHRV, hrv.isFinite, n >= 14 else { return 50.0 }
+
+        // Compute mean and population std of the finite baseline.
+        let mean = finite.reduce(0.0, +) / Double(n)
+        let variance = finite.reduce(0.0) { $0 + ($1 - mean) * ($1 - mean) } / Double(n)
+        let std = variance.squareRoot()
+
+        guard std >= 1.0 && std.isFinite else { return 50.0 }
+
+        let z = (hrv - mean) / std
+        return (50.0 + z * 15.0).clamped(to: 0...100)
     }
 }

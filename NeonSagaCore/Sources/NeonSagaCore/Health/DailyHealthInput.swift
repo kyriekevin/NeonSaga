@@ -9,8 +9,8 @@ import Foundation
 /// the record's ACCUMULATED values, never this carrier.
 public struct DailyHealthInput {
     public let capturedAt: Date
-    public let hunger: Double    // 0...100 — neutral-50 placeholder until Stage 3
-    public let fatigue: Double   // 0...100 — baseline-relative HRV recovery reading
+    public let hunger: Double  // 0...100 — neutral-50 placeholder until Stage 3
+    public let fatigue: Double  // 0...100 — baseline-relative HRV recovery reading
     public let strength: Double  // 0...100 — normalized workout energy
 
     public init(capturedAt: Date, hunger: Double, fatigue: Double, strength: Double) {
@@ -27,9 +27,22 @@ public struct DailyHealthInput {
     public static func derive(
         from metrics: HealthMetrics, hrvBaseline: [Double], at capturedAt: Date
     ) -> DailyHealthInput {
-        // S6b RED stub — GREEN implements the three daily-input mappings. All-zeros
-        // fails the assertions (FATIGUE == 50 calibrating, HUNGER == 50, FATIGUE
-        // increases with today-HRV) so `make test-core` stays red until the body lands.
-        DailyHealthInput(capturedAt: capturedAt, hunger: 0, fatigue: 0, strength: 0)
+        // STRENGTH ← normalized workout energy (kcal / 6, clamped 0...100; nil or non-finite → 0).
+        let strength: Double
+        if let raw = metrics.activeWorkoutEnergyKilocalories, raw.isFinite {
+            strength = (raw / 6.0).clamped(to: 0...100)
+        } else {
+            strength = 0
+        }
+
+        // FATIGUE ← baseline-relative HRV recovery reading (neutral 50 while calibrating).
+        let fatigue = Recovery.hrvRecoveryReading(
+            todayHRV: metrics.hrvRMSSD, baseline: hrvBaseline)
+
+        // HUNGER ← neutral placeholder (Stage 3 will supply a real source).
+        let hunger: Double = 50.0
+
+        return DailyHealthInput(
+            capturedAt: capturedAt, hunger: hunger, fatigue: fatigue, strength: strength)
     }
 }

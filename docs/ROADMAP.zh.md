@@ -78,8 +78,12 @@ HEALTH 任一 sub-stat 越过 LV 阈值时 Level-up 全屏接管触发。
    header。通过 daily presence model + scene-active 时的 presence recorder
    service + streak source service,追踪连续 app-open 天数。
 9. **HealthSnapshot service(Stage 3 跨域前置)** —— 把 HealthKit 数据
-   (HRV、HR、sleep、workouts)桥接到 HEALTH sub-stats:HRV → FATIGUE / Recovery;
-   HKWorkout → STRENGTH 和 FATIGUE;sleep samples → FATIGUE。**Stage 3 的跨域
+   (HRV、HR、sleep、workouts)桥接到 HEALTH sub-stats:**HRV → FATIGUE / Recovery;
+   HKWorkout → STRENGTH;sleep + RHR → 仅 Recovery**(FATIGUE 仅由 HRV 驱动,
+   按 PRODUCT §9 —— workout/sleep 不喂 FATIGUE;ADR-002)。HEALTH sub-stat 值
+   是**累积的(EWMA,时间感知缓慢衰减),非每个 snapshot 瞬时值** —— 累积模型
+   (slice **S6b**)在 **Level-up 全屏接管(项 3)之前**落地,使 LV 跨越有意义、
+   而非每日 0↔100 抖动(ADR-002)。**Stage 3 的跨域
    引擎刻意绕过 `HealthSnapshot`(避免通过 `InferenceLog` 双重计数)** ——
    见 §4 跨域 wire 澄清。Recovery(项 2)和 Strain(项 4)都消费 `HealthSnapshot`;
    `NeonSagaCoreTests/main.swift` 中的测试验证 `HealthSnapshot.derive(...)` 映射。

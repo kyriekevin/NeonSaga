@@ -79,9 +79,14 @@ the Plan B list below — do not slip the deadline.
    model, a presence recorder service on scene-active, and a streak source
    service.
 9. **HealthSnapshot service (Stage 3 cross-domain prerequisite)** — Bridges
-   HealthKit data (HRV, HR, sleep, workouts) → HEALTH sub-stats: HRV →
-   FATIGUE / Recovery; HKWorkout → STRENGTH and FATIGUE; sleep samples →
-   FATIGUE. **Stage 3's cross-domain engine deliberately routes around
+   HealthKit data (HRV, HR, sleep, workouts) → HEALTH sub-stats: **HRV →
+   FATIGUE / Recovery; HKWorkout → STRENGTH; sleep → Recovery only**
+   (FATIGUE is HRV-driven per PRODUCT §9 — workout/sleep do NOT feed FATIGUE;
+   ADR-002). HEALTH sub-stat values are **accumulated (EWMA, time-aware slow
+   decay), not per-snapshot instantaneous** — the accumulation model (slice
+   **S6b**) lands **before the Level-up takeover (item 3)** so that LV crossings
+   are meaningful rather than daily 0↔100 oscillation (ADR-002).
+   **Stage 3's cross-domain engine deliberately routes around
    `HealthSnapshot` (no double-counting via `InferenceLog`)** — see §4
    cross-domain wiring clarifications. Recovery (item 2) and Strain
    (item 4) both consume `HealthSnapshot`; tests in
@@ -260,10 +265,11 @@ LOG TRANSACTION sheet, WEALTH detail real, **meal-photo → HUNGER trigger**
 
 ### Cross-domain wiring clarifications
 
-- **HKWorkout → STRENGTH/FATIGUE updates flow via `HealthSnapshot`, NOT
+- **HKWorkout → STRENGTH updates flow via `HealthSnapshot`, NOT
   `InferenceLog`.** This is a hard invariant (avoids double-counting).
   Stage 1 already wires this. Stage 3 does NOT route HKWorkout through the
-  cross-domain rules engine.
+  cross-domain rules engine. (FATIGUE is HRV-driven, not workout-driven —
+  ADR-002.)
 - **HKWorkout → active STRENGTH quest progress** is wired in Stage 2's
   quest layer (not Stage 3's cross-domain engine).
 

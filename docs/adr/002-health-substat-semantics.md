@@ -9,7 +9,7 @@
 
 ## Status
 
-proposed
+accepted (2026-05-29)
 
 ## Date
 
@@ -333,5 +333,7 @@ Neutral/open); any change to Recovery, Strain, LV math, or the CORE-root work.
   resolved more thoroughly than Gemini's "static/population baseline"
   suggestion. PR #10's lone Gemini finding (file count 10→11) was already
   fixed by the Codex round-1 pass (stale comment on `bc6f745`).
-- Lead approval: <pending>
-- Owner approval: <pending>
+- Lead approval: 2026-05-29.
+- Owner approval: 2026-05-29 (PR #11 merged).
+- Spec edits applied (this PR): PRODUCT §6 + §9 (EN/ZH), ROADMAP §2 item 9 +
+  §4 (EN/ZH), status flipped to `accepted`.

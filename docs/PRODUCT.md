@@ -86,7 +86,7 @@ One log entry → AI extracts fields + user fills a few → N stats update. Rule
 | Meal expense (no photo) | v0.3 | Party size | Location / time / amount / merchant | WEALTH−X · COMPANIONSHIP+X (if party > 1) · TRAVEL+1 (if away from home) |
 | Meal expense + food photo | v0.3 | Party size | Same as above + multimodal AI extracts food items / portions / nutrition | WEALTH−X · HUNGER+X (by nutrition) · COMPANIONSHIP+X · TRAVEL+1 |
 | Gym membership purchase | v0.3 | — | Merchant / amount | WEALTH−X · suggest "STRENGTH monthly quest" (user must accept) |
-| Apple Watch workout (*) | v0.1 (stats) / v0.2 (quest progress) | — | Type / duration / HR / calories | STRENGTH+X · FATIGUE+X (v0.1 via `HealthSnapshot`) · active STRENGTH quest progress (v0.2 via Stage 2 Quest layer) |
+| Apple Watch workout (*) | v0.1 (stats) / v0.2 (quest progress) | — | Type / duration / HR / calories | STRENGTH+X (v0.1 via `HealthSnapshot`) · active STRENGTH quest progress (v0.2 via Stage 2 Quest layer) — workout does NOT feed FATIGUE; FATIGUE is HRV-driven (§9, ADR-002) |
 | Flight | v0.3 | Co-traveler count | Origin / destination (auto-geocoded; manual entry as Stage 3 Plan B fallback per `ROADMAP.md` §4 L2) / amount | WEALTH−X · TRAVEL+map-unlock · COMPANIONSHIP+X |
 | Reading / OJ / paper log | v1.1 | Title / duration | (future AI classification) | INTELLECT+X |
 | Apple Maps Significant Location | **v1.0 public** | — | City / country / frequency | TRAVEL+1 (new city) · new map node — iOS CLLocation visit monitoring |
@@ -141,6 +141,8 @@ Engine is declarative and table-driven. When no rule matches, the engine returns
 | COMPANIONSHIP | Expense reverse-inference + user-supplied party size | Cross-domain inference |
 | TRAVEL | iOS CLLocationManager + Significant Location Change + Visit Monitoring | Fully automatic (background); requires `NSLocationAlwaysAndWhenInUseUsageDescription` |
 | WEALTH | Transaction model | Manual |
+
+> **Sub-stat dynamics (ADR-002).** HEALTH sub-stat values are **accumulated** (EWMA with a time-aware slow decay), not per-snapshot instantaneous readings — STRENGTH builds with consistent training and decays gently on rest, FATIGUE is a slow HRV-recovery trend (distinct from the daily Recovery hero score). This is *how* the source above maps to the stored stat; it does not change the sources.
 
 ## 10. First-eye view & visual direction
 

@@ -232,8 +232,8 @@ this PR; this ADR fixes the posture.
     correctness gate does not inspect."
 - **Follow-ons (NOT in this PR):**
   - secret-scan guard at S9 (D5), exact-signature-first, excluding docs/templates/fixtures.
-  - SHA / exact-pin edits to `.pre-commit-config.yaml`, `ci.yml`, and the
-    user-global `block-no-verify` (D4).
+  - SHA / exact-pin edits to `.pre-commit-config.yaml`,
+    `.github/workflows/ci.yml`, and the user-global `block-no-verify` (D4).
   - a pre-commit guard rejecting double-bracketed memory cross-links in tracked
     docs (needs the adversarial fixture matrix).
   - mirror the R3 review-cap into the `slice-pipeline` skill (cite §10, do not

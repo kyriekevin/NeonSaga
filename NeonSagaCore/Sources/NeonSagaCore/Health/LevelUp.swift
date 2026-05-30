@@ -1,5 +1,5 @@
 /// Records a level-up crossing from `oldLevel` to `newLevel`.
-public struct LevelCrossing: Equatable {
+public struct LevelCrossing: Hashable {
     public let oldLevel: Int
     public let newLevel: Int
 
@@ -23,8 +23,9 @@ public enum LevelUp {
     }
 }
 
-/// A level-up crossing on a specific HEALTH sub-stat.
-public struct SubStatLevelCrossing: Equatable {
+/// A level-up crossing on a specific HEALTH sub-stat. `Hashable` so the takeover view
+/// can use the crossing as a SwiftUI `.id(...)` to re-fire its intro per queued crossing.
+public struct SubStatLevelCrossing: Hashable {
     public let substat: SubStat
     public let crossing: LevelCrossing
 

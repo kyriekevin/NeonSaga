@@ -21,7 +21,12 @@ struct LevelUpTakeoverView: View {
 
     var body: some View {
         if let crossing = viewModel.currentLevelUp {
+            // `.id(crossing)` gives each queued crossing a fresh view identity, so the
+            // scale/opacity intro AND the success haptic re-fire per crossing (the
+            // baseline update in the VM makes identical consecutive crossings unreachable,
+            // so the crossing value alone is a sufficient id — Codex diff-review item 3).
             TakeoverCard(crossing: crossing, onDismiss: { viewModel.dismissCurrentLevelUp() })
+                .id(crossing)
                 .transition(.opacity)
                 .animation(.easeInOut(duration: 0.3), value: crossing)
         }
@@ -51,7 +56,7 @@ private struct TakeoverCard: View {
                     .font(.system(size: 22, weight: .bold, design: .monospaced))
                     .foregroundStyle(Color.white.opacity(0.85))
 
-                Text("LV \(crossing.crossing.oldLevel) -> \(crossing.crossing.newLevel)")
+                Text("LV \(crossing.crossing.oldLevel) → \(crossing.crossing.newLevel)")
                     .font(.system(size: 18, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.cyan.opacity(0.9))
             }
@@ -59,7 +64,11 @@ private struct TakeoverCard: View {
             .opacity(visible ? 1.0 : 0.0)
             .animation(.spring(duration: 0.35), value: visible)
         }
-        .sensoryFeedback(.success, trigger: crossing)
+        // Trigger the haptic off `visible` (false→true on appear), NOT off `crossing`:
+        // `.sensoryFeedback` fires on a CHANGE, not on first appearance, so a fixed
+        // per-card `crossing` trigger would never fire. The appear-time flip guarantees one
+        // success haptic each time a (freshly `.id`-ed) card mounts (Codex diff-review item 3).
+        .sensoryFeedback(.success, trigger: visible)
         .onAppear { visible = true }
         .task(id: crossing) {
             do {

@@ -9,7 +9,7 @@
 
 ## Status
 
-proposed (2026-05-30) — flips to `accepted` on owner approval (owner merge = acceptance)
+accepted (2026-05-30)
 
 ## Date
 
@@ -21,7 +21,7 @@ Our correctness signal is strong on **pure logic** and on **view-model state**, 
 blind on **everything between a passing view-model test and a screen that actually
 works**. Two test layers exist today:
 
-- `NeonSagaCore` custom-runner tests (§4) — pure Swift, sub-second (~150 tests).
+- `NeonSagaCore` custom-runner tests (CLAUDE.md §4) — pure Swift, sub-second (~150 tests).
 - `NeonSagaTests/` iOS XCTest — `@Model` and view-model tests. The latter
   (`HealthDetailViewModelTests`) deliberately asserts the VM's **published state**
   (the `RecoveryBand` enum, numeric `*Fraction` values, placeholder strings), not
@@ -41,8 +41,8 @@ hit and caught **by hand, not by a test**:
 - §1.7 (wiring completeness) already requires "all shipped tabs reachable from
   `RootTab.allCases` / `RootView`" and "no dead routes", but there is **no automated
   check** that the app launches, tabs are reachable, and each surface renders without
-  crashing. §1.4's Stage-4 exit ritual already **mandates a "5-tab happy-path smoke
-  flow (CORE → INGEST → ORACLE → CONTRACTS → ARCHIVE)"** — with **no tooling
+  crashing. §1.4's Stage-4 exit ritual already **mandates a 5-tab happy-path smoke
+  flow** (CLAUDE.md §1.4 defines the exact step sequence) — with **no tooling
   specified to run it**.
 
 The owner flagged (2026-05-29 infra-sprint scoping) that **past UI implementation had
@@ -80,8 +80,10 @@ lifecycle items those sections do not carry:
   body pass.
 - [ ] View-model state **survives parent re-render** (owned by `@State`/`@StateObject`
   at the right level, not re-created inside `body`).
-- [ ] `@Environment` values (e.g. `modelContext`) are read **once** at the entry view,
-  not re-derived deep in the tree.
+- [ ] An `@Environment` value used to **construct** a store or view model (e.g.
+  `modelContext` → `HealthSnapshotStore`) is read once at the entry view and the
+  constructed object is passed down — not re-derived to rebuild it deep in the tree.
+  (Ordinary descendant `@Environment` reads for styling/context are fine.)
 - [ ] No store I/O or business logic in `body` (or a computed `body` path); `body`
   reads already-computed VM state.
 - [ ] An `@Observable` VM exposes displayed values as stored/computed properties so
@@ -89,9 +91,11 @@ lifecycle items those sections do not carry:
 - [ ] Reachability + screenshots are confirmed per **§1.7 / §1.4** (referenced here,
   not duplicated).
 
-Layer 0 is the cheapest layer and catches the bug we have actually seen. It is
-codified into the `slice-pipeline` skill (§9) as a review sub-checklist that cites
-this ADR and the §-numbers above (per [[feedback-spec-reference-dont-restate]]).
+Layer 0 is the cheapest layer and catches the bug we have actually seen. Until the
+`slice-pipeline` skill (CLAUDE.md §9) mirrors it (a follow-on Layer-0 implementation
+step — see Implementation, **not in this PR**), **this ADR is the checklist's
+authoritative home**; the skill sub-checklist will then **cite** this ADR and the
+§-numbers above rather than restate them (per [[feedback-spec-reference-dont-restate]]).
 
 ### Layer 1 — Simulator smoke (XCUITest + `ios-simulator-skill`)
 
@@ -100,8 +104,8 @@ simulator. It proves what unit tests cannot: the app launches, the entry view
 constructs its VM without crashing, tabs are reachable (the §1.7 wiring check made
 **executable**), and each surface renders. Layer 1 is the natural runner for the
 **§1.4 Stage-4 5-tab happy-path smoke flow**, which is already mandated but has no
-tooling. It uses the already-registered `ios-simulator-skill` (§9) for automation and
-`docs/screenshots/` capture (§1.4 / §1.7).
+tooling. It uses the already-registered `ios-simulator-skill` (CLAUDE.md §9) for
+automation and `docs/screenshots/` capture (§1.4 / §1.7).
 
 **Trigger to build it:** the first slice that ships **navigation between ≥2 real
 surfaces** — i.e. S10 (CORE root) / the Stage-4 tab IA. **Not** built for the current
@@ -197,12 +201,16 @@ through**. Not adopted pre-emptively — an unused dependency is net-negative.
 
 ## Implementation
 
-- **Layer 0 (this sprint):** codify the checklist into
-  `.claude/skills/slice-pipeline/SKILL.md` as a "UI lifecycle review (Layer 0,
-  ADR-003)" sub-section, citing §1.7 / §1.4 / §1.9 by number. Verified as a skill
-  change (§1.9 skill row: manual review + trigger self-test).
-- **Layer 1 (S10 CONTRACT):** the S10 CORE-root slice's CONTRACT pins the XCUITest
-  target/scheme, the launch→navigate→screenshot smoke, and the §1.4 5-tab flow runner.
+- **Layer 0 (follow-on change, this sprint — NOT in this PR):** mirror the checklist
+  into `.claude/skills/slice-pipeline/SKILL.md` as a "UI lifecycle review (Layer 0,
+  ADR-003)" sub-section that **cites** this ADR + CLAUDE.md §1.7 / §1.4 / §1.9 by
+  number (does not restate them). Verified as a skill change (CLAUDE.md §1.9 skill
+  row: manual review + trigger self-test).
+- **Layer 1 (S10 CONTRACT, then Stage-4 CONTRACT):** the S10 CORE-root slice's
+  CONTRACT pins the XCUITest target/scheme + an initial launch→navigate→screenshot
+  smoke over the surfaces S10 actually ships. The **full CLAUDE.md §1.4 5-tab flow
+  runner is owned by the Stage-4 CONTRACT** (all five tabs exist only at Stage 4) —
+  not pre-pinned here.
 - **Layer 2 (on demand):** when a view's state→structure logic first regresses past
   Layers 0–1, a CONTRACT adds `ViewInspector` (SHA-pinned, test-target only,
   supply-chain-inventoried per sprint item #5) plus structural tests for that surface.
@@ -211,6 +219,17 @@ through**. Not adopted pre-emptively — an unused dependency is net-negative.
 
 ## Review
 
-- Codex review: pending — `Skill(codex:rescue)`, this PR.
+- Codex review round 1 (`Skill(codex:rescue)`, fresh): **APPROVE WITH CHANGES**
+  (0 BLOCKING / 5 IMPORTANT / 2 NIT). All applied in a fix commit on this branch:
+  (1) replaced the §1.4 5-tab-flow paraphrase in Context with a bare `CLAUDE.md §1.4`
+  citation (dropped action verbs were drift); (2) qualified bare `§4` / `§9` as
+  `CLAUDE.md §4` / `§9`; (3) reworded Layer-0 skill codification as a deferred
+  follow-on step (this ADR is the checklist's authoritative home until the skill
+  mirrors it) — the diff touches only this ADR + `CLAUDE.md`; (4) scoped the S10
+  CONTRACT to an initial smoke and moved the full §1.4 5-tab runner to the Stage-4
+  CONTRACT (all five tabs exist only at Stage 4); (5) rescoped the Layer-0
+  `@Environment` item to store/VM construction (ordinary descendant reads are fine).
+  NIT 6 (numbering) and item 7 (template conformance) confirmed clean.
 - Lead approval: 2026-05-30.
-- Owner approval: pending (this PR; owner merge = acceptance).
+- Owner approval: pending — PR open; owner merge finalizes acceptance, after which the
+  owner triggers `/gemini review`.

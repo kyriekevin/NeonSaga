@@ -12,10 +12,10 @@
 
 ## What ships today
 
-Stage 1 (HEALTH domain) is in progress. Slices **S1–S6 + S6b are merged**,
-followed by the agent-infra sprint (PRs #14–#17: pre-commit hooks, slice-pipeline
-skill + green-worker, ADR-003 UI-eval, ADR-004 supply-chain). `main` is at
-`9cd758d`; **S7 (level-up takeover) is this PR**. What is real and tested:
+Stage 1 (HEALTH domain) is in progress. Slices **S1–S7 (incl. S6b) are merged**,
+with the agent-infra sprint (PRs #14–#17: pre-commit hooks, slice-pipeline
+skill + green-worker, ADR-003 UI-eval, ADR-004 supply-chain) in between. `main` is
+at `6017791`; **S8 (Sleep architecture detail) is this PR**. What is real and tested:
 
 - **HEALTH core** (`NeonSagaCore`, pure Swift): per-value LV math (`Level`,
   `SubStat`, `SubStatValue`, `HealthStat`, `LevelUp`), `HealthMetrics` +
@@ -23,21 +23,30 @@ skill + green-worker, ADR-003 UI-eval, ADR-004 supply-chain). `main` is at
   `HealthDataSource` protocol, **Recovery** score 0–100 + RED/YELLOW/GREEN
   bands, **Strain** score 0–21, shared `Comparable.clamped(to:)`,
   **time-aware EWMA sub-stat accumulation** (`EWMA` / `HealthAccumulation` /
-  `DailyHealthInput`; ADR-002, S6b), and **level-up crossing detection**
-  (`LevelUp.detectCrossings` + `SubStatLevelCrossing`, S7).
+  `DailyHealthInput`; ADR-002, S6b), **level-up crossing detection**
+  (`LevelUp.detectCrossings` + `SubStatLevelCrossing`, S7), and **sleep
+  architecture** (`Sleep.summary` → `SleepResult` / `SleepSummary`, S8).
 - **App persistence** (`NeonSaga/`): `HealthSnapshotRecord` `@Model`
   (CloudKit-dormant, `cloudKitDatabase: .none`) + `@MainActor`
   `HealthSnapshotStore` (save / latest / `deriveAndStore` + suffix re-accumulate /
   28-day `recentHRVBaseline`).
 - **HEALTH detail surface**: `HealthDetailView` / `HealthDetailViewModel` /
   `HealthDetailAdapter` — a dark Cyberpunk-HUD 4-card stack (Recovery ring,
-  Sleep placeholder, Strain bar, HEALTH sub-stats).
+  **Sleep architecture**, Strain bar, HEALTH sub-stats).
 - **Level-up takeover** (S7): `LevelUpTakeoverView` — a full-screen Cyberpunk-HUD
   overlay (~0.8s scale/opacity intro + `.sensoryFeedback` success haptic) that
   fires when any HEALTH sub-stat crosses an LV threshold upward. The
   `HealthDetailViewModel` detects crossings by diffing the previously-displayed
   vs. freshly computed sub-stat values and queues them FIFO (silent on first
   load). Sound asset + glitch motion-polish are deferred (ROADMAP Plan B L4 / S11).
+- **Sleep architecture** (S8): the Sleep card renders Deep/REM/Light minutes, a
+  proportional stacked bar, the asleep total, time-in-bed + efficiency, and wake
+  events — driven by a pure-core `Sleep.summary(for:)` (`.noData` / `.scored`)
+  that reads only five new raw sleep-stage fields on `HealthMetrics`
+  (`deepSleepMinutes` / `remSleepMinutes` / `lightSleepMinutes` /
+  `timeInBedMinutes` / `wakeEventsCount`), persisted on `HealthSnapshotRecord`.
+  Fed synthetic / in-memory data until the S5b HealthKit reader lands;
+  time-in-bed + wake events are independently optional (ROADMAP Plan B L3).
 
 **Two caveats a reader must know:**
 
@@ -57,9 +66,9 @@ skill + green-worker, ADR-003 UI-eval, ADR-004 supply-chain). `main` is at
 
 ## What's next
 
-Remaining Stage 1 slices (per `docs/ROADMAP.md` §2): **S8** Sleep architecture
-detail, **S9** AI Recovery brief, **S10** Daily streak counter, **S11** visual
-subjective parity polish + screenshots. Plus **S5b** (device HealthKit reader) —
+Remaining Stage 1 slices (per `docs/ROADMAP.md` §2): **S9** AI Recovery brief,
+**S10** Daily streak counter, **S11** visual subjective parity polish +
+screenshots. Plus **S5b** (device HealthKit reader) —
 must land before the `v0.1` exit ritual so real data backs the scores (and so the
 S7 takeover live-fires on real LV crossings, not just synthetic test data). Each
 slice runs the
@@ -68,18 +77,18 @@ diff review → `make verify-full` → PR → owner merge).
 
 See `docs/ROADMAP.md` §2 for full Stage 1 scope and Plan B cut order.
 
-## File counts (S7)
+## File counts (S8)
 
 | Surface | Files |
 |---|---|
-| `NeonSagaCore/Sources/NeonSagaCore/` | 14 (`NeonSagaCore.swift`, `Comparable+Clamped.swift`, + `Health/` (12): `Level`, `SubStat`, `HealthStat`, `LevelUp`, `HealthMetrics`, `HealthSnapshot`, `HealthDataSource`, `Recovery`, `Strain`, `DailyHealthInput`, `EWMA`, `HealthAccumulation`) |
-| `NeonSagaCore/Sources/NeonSagaCoreTests/` | 1 (`main.swift` — custom runner; 157 assertions) |
+| `NeonSagaCore/Sources/NeonSagaCore/` | 15 (`NeonSagaCore.swift`, `Comparable+Clamped.swift`, + `Health/` (13): `Level`, `SubStat`, `HealthStat`, `LevelUp`, `HealthMetrics`, `HealthSnapshot`, `HealthDataSource`, `Recovery`, `Strain`, `DailyHealthInput`, `EWMA`, `HealthAccumulation`, `Sleep`) |
+| `NeonSagaCore/Sources/NeonSagaCoreTests/` | 1 (`main.swift` — custom runner; 202 assertions) |
 | `NeonSaga/App/` | 1 (`NeonSagaApp.swift` — `@main`, temporary HEALTH-detail root) |
 | `NeonSaga/Models/` | 1 (`HealthSnapshotRecord.swift`) |
 | `NeonSaga/Services/` | 2 (`HealthSnapshotStore.swift`, `HealthDetailAdapter.swift`) |
 | `NeonSaga/ViewModels/` | 1 (`HealthDetailViewModel.swift`) |
-| `NeonSaga/Views/` | 2 (`HealthDetailView.swift`, `LevelUpTakeoverView.swift`) |
-| `NeonSagaTests/` | 6 (`GenesisSmokeTests`, `HealthSnapshotStoreTests`, `HealthSnapshotStoreBaselineTests`, `HealthAccumulationStoreTests`, `HealthDetailViewModelTests`, `LevelUpViewModelTests`) |
+| `NeonSaga/Views/` | 2 (`HealthDetailView.swift` (now incl. the Sleep architecture card), `LevelUpTakeoverView.swift`) |
+| `NeonSagaTests/` | 8 (`GenesisSmokeTests`, `HealthSnapshotStoreTests`, `HealthSnapshotStoreBaselineTests`, `HealthAccumulationStoreTests`, `HealthDetailViewModelTests`, `LevelUpViewModelTests`, `SleepViewModelTests`, `SleepDurationTextTests`) |
 | `docs/adr/` | 4 ADRs + template (ADR-001…004 accepted) |
 
 Refreshed after notable slices; full file-count audit re-confirmed at each
@@ -88,14 +97,15 @@ Stage exit per `CLAUDE.md` §1.4.
 ## Verification state
 
 - `make verify`: **green** — pre-commit hooks (swift-format lint + hygiene) +
-  `make build-core` + `make test-core` (custom runner: `157 passed, 0 failed`).
+  `make build-core` + `make test-core` (custom runner: `202 passed, 0 failed`).
 - `make verify-full`: **green** (2026-05-31) — `make verify` + `make gen` +
   iOS `make build` + iOS `make test` on the iPhone 17 simulator:
-  **157 core / 44 iOS, 0 failed**.
-- Latest iOS test count: 44 across 6 suites (`GenesisSmokeTests`,
+  **202 core / 52 iOS, 0 failed**.
+- Latest iOS test count: 52 across 8 suites (`GenesisSmokeTests`,
   `HealthSnapshotStoreTests`, `HealthSnapshotStoreBaselineTests`,
   `HealthAccumulationStoreTests`, `HealthDetailViewModelTests`,
-  `LevelUpViewModelTests` (7, S7))
+  `LevelUpViewModelTests`, `SleepViewModelTests` (5, S8),
+  `SleepDurationTextTests` (2, S8))
 - Latest screenshots: none committed — `docs/screenshots/` holds only
   `.gitkeep`; the HEALTH-detail screenshot lands with S11 (visual parity)
   per `CLAUDE.md` §1.4 stage-exit ritual.
@@ -106,9 +116,9 @@ Stage exit per `CLAUDE.md` §1.4.
   deletion blocked; enforced for admins too).
 - Workflow: all changes land via feature branch → PR → Codex review → merge
   (`CLAUDE.md` §8). Genesis specs + ADR-001 are the root commit (`3b098d4`);
-  slices S1–S6 + S6b landed via PRs #2–#13, then the agent-infra sprint via
-  PRs #14–#17 (hooks, slice-pipeline skill, ADR-003, ADR-004), all
-  squash-merged; `main` now at `9cd758d`. S7 (this PR) is the next slice.
+  slices S1–S6 + S6b landed via PRs #2–#13, the agent-infra sprint via PRs
+  #14–#17 (hooks, slice-pipeline skill, ADR-003, ADR-004), and S7 via PR #18,
+  all squash-merged; `main` now at `6017791`. S8 (this PR) is the next slice.
 - Tags: none (first tag `v0.1` at Stage 1 exit).
 
 ## Genesis tasks (completed — history)

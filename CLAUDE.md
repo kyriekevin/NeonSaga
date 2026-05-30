@@ -88,7 +88,9 @@ Each Stage closes with this ritual, in order:
    - Stage 2 (v0.2): ≥1 day
    - Stage 3 (v0.3): ≥3 days (killer-edge dwell test)
    - Stage 4 (v1.0-personal): ≥1 day, must complete 5-tab happy-path smoke flow
-     (CORE → INGEST log → ORACLE ask → CONTRACTS view → ARCHIVE scrub)
+     (CORE → INGEST log → ORACLE ask → CONTRACTS view → ARCHIVE scrub) — the same
+     flow runs automatically in the simulator via the ADR-003 Layer-1 smoke as a
+     pre-device gate
    - v1.0 public (post-Stage 4): ≥7 days
 4. `docs/STATUS.md` updated to reflect shipped state.
 5. Wiring completeness checklist (§1.7) all green.
@@ -175,6 +177,8 @@ insufficient for SwiftUI/SwiftData regressions.
 |---|---|---|
 | Pure Swift logic in `NeonSagaCore` (algorithms, parsers, rules) | `make test-core` | Sub-second; custom runner covers this layer |
 | SwiftData `@Model` or SwiftUI views | `make test` (iOS XCTest) | `test-core` cannot host SwiftData/SwiftUI |
+| SwiftUI view add/change (view ↔ view-model ownership) | `make test` + the Layer-0 lifecycle review checklist (ADR-003) | Unit tests are structurally blind to view ↔ VM construction / re-render lifecycle |
+| Multi-surface navigation or stage-exit smoke | Layer-1 simulator smoke — XCUITest + `ios-simulator-skill` (ADR-003) | Makes §1.7 tab reachability + the §1.4 5-tab flow executable |
 | Anything that crosses `NeonSagaCore` ↔ `NeonSaga/` boundary | `make verify-full` | Catches schema + view + service integration |
 | Docs-only change (`*.md`, no code) | Proofread + spec hierarchy check (§1.8); no `make` needed | No build artifact to verify |
 | Build config (`project.yml`, `Makefile`, `Package.swift`) | `make gen` clean diff + `make build-core` + `make build` | Catches missing-file / target / dependency regression |

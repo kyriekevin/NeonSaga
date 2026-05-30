@@ -52,6 +52,7 @@ private struct HealthDetailContentView: View {
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .onAppear { viewModel.refresh() }
+        .overlay { LevelUpTakeoverView(viewModel: viewModel) }
     }
 }
 

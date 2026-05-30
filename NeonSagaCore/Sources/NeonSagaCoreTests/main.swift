@@ -97,6 +97,61 @@ group("health-levelup-detect") {
     expect(LevelUp.detect(from: 60, to: 40) == nil, "decrease → no crossing")
 }
 
+group("health-levelup-detect-crossings") {
+    // LevelUp.detectCrossings aggregates per-sub-stat upward LV crossings, in the fixed
+    // order hunger → fatigue → strength, omitting non-crossings (delegates to detect).
+    // Level.of reference points: of(40)=40, of(60)=60, of(10)=10, of(30)=30, of(50)=50,
+    // of(99)=99, of(100)=100, of(150)→clamp 100.
+    func xing(_ s: SubStat, _ old: Int, _ new: Int) -> SubStatLevelCrossing {
+        SubStatLevelCrossing(substat: s, crossing: LevelCrossing(oldLevel: old, newLevel: new))
+    }
+
+    // single crossing — only STRENGTH moves 40→60.
+    let single = LevelUp.detectCrossings(
+        from: (hunger: 40, fatigue: 40, strength: 40),
+        to: (hunger: 40, fatigue: 40, strength: 60))
+    expect(single == [xing(.strength, 40, 60)], "single crossing → [.strength 40→60]")
+
+    // multiple — all three cross 10→30, in hunger/fatigue/strength order.
+    let triple = LevelUp.detectCrossings(
+        from: (hunger: 10, fatigue: 10, strength: 10),
+        to: (hunger: 30, fatigue: 30, strength: 30))
+    expect(
+        triple == [xing(.hunger, 10, 30), xing(.fatigue, 10, 30), xing(.strength, 10, 30)],
+        "three crossings in hunger→fatigue→strength order")
+
+    // no crossing — value moves but LV unchanged (all stay LV 50).
+    let moved = LevelUp.detectCrossings(
+        from: (hunger: 50, fatigue: 50, strength: 50),
+        to: (hunger: 50.0, fatigue: 50.0, strength: 50.4))
+    expect(moved.isEmpty, "sub-LV value move → no crossings")
+
+    // no crossing — decrease.
+    let down = LevelUp.detectCrossings(
+        from: (hunger: 60, fatigue: 60, strength: 60),
+        to: (hunger: 40, fatigue: 40, strength: 40))
+    expect(down.isEmpty, "decrease → no crossings")
+
+    // mixed — only HUNGER crosses; fatigue/strength static.
+    let mixed = LevelUp.detectCrossings(
+        from: (hunger: 40, fatigue: 50, strength: 60),
+        to: (hunger: 60, fatigue: 50, strength: 60))
+    expect(mixed == [xing(.hunger, 40, 60)], "mixed → only [.hunger 40→60]")
+
+    // exact top-boundary crossing — STRENGTH 99→100 (v=100 is float-exact; interior
+    // boundaries at 100k/99 are float-fragile by formula, so we pin the exact endpoint).
+    let boundary = LevelUp.detectCrossings(
+        from: (hunger: 40, fatigue: 40, strength: 99),
+        to: (hunger: 40, fatigue: 40, strength: 100))
+    expect(boundary == [xing(.strength, 99, 100)], "exact top boundary → [.strength 99→100]")
+
+    // LV-100 clamp — raw values rise but all clamp to LV 100 → no false crossing.
+    let clamped = LevelUp.detectCrossings(
+        from: (hunger: 100, fatigue: 100, strength: 100),
+        to: (hunger: 150, fatigue: 200, strength: 300))
+    expect(clamped.isEmpty, "all clamp to LV 100 → no crossing (compares LV, not raw value)")
+}
+
 group("health-aggregate") {
     // HEALTH value = clamp(avg of values, 0, 100); LV = floor(avg of sub-stat LVs) (PRODUCT §6/§7).
     expect(HealthStat.value(hunger: 60, fatigue: 60, strength: 60) == 60, "HEALTH value = avg = 60")

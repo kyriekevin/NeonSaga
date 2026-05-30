@@ -102,26 +102,34 @@ final class SleepViewModelTests: XCTestCase {
         let store = HealthSnapshotStore(context: ModelContext(container), calendar: cal(utc))
         let day = cal(utc).date(from: DateComponents(year: 2026, month: 6, day: 1, hour: 12))!
 
-        // Insert: sleep A.
+        // Insert: sleep A (all five sleep fields distinct from B).
         _ = try await store.deriveAndStore(
             from: StubSource(
                 metrics: HealthMetrics(
-                    deepSleepMinutes: 60, remSleepMinutes: 50, lightSleepMinutes: 200)),
+                    deepSleepMinutes: 60, remSleepMinutes: 50, lightSleepMinutes: 200,
+                    timeInBedMinutes: 340, wakeEventsCount: 2)),
             at: day, capturedIn: utc)
         let afterInsert = try XCTUnwrap(try store.latest())
         XCTAssertEqual(afterInsert.deepSleepMinutes ?? -1, 60, accuracy: 1e-9)
+        XCTAssertEqual(afterInsert.timeInBedMinutes ?? -1, 340, accuracy: 1e-9)
+        XCTAssertEqual(afterInsert.wakeEventsCount, 2)
 
-        // Same stat-day overwrite: sleep B (different) — must replace, not retain A.
+        // Same stat-day overwrite: sleep B (every field different) — must replace, not
+        // retain A. Asserting timeInBed + wakeEvents too guards the overwrite branch
+        // against copying only the stage minutes (Codex tests-review finding 1).
         _ = try await store.deriveAndStore(
             from: StubSource(
                 metrics: HealthMetrics(
-                    deepSleepMinutes: 95, remSleepMinutes: 65, lightSleepMinutes: 230)),
+                    deepSleepMinutes: 95, remSleepMinutes: 65, lightSleepMinutes: 230,
+                    timeInBedMinutes: 410, wakeEventsCount: 5)),
             at: day, capturedIn: utc)
         XCTAssertEqual(try store.allRecords().count, 1, "same stat-day upserts a single record")
         let after = try XCTUnwrap(try store.latest())
         XCTAssertEqual(after.deepSleepMinutes ?? -1, 95, accuracy: 1e-9)
         XCTAssertEqual(after.remSleepMinutes ?? -1, 65, accuracy: 1e-9)
         XCTAssertEqual(after.lightSleepMinutes ?? -1, 230, accuracy: 1e-9)
+        XCTAssertEqual(after.timeInBedMinutes ?? -1, 410, accuracy: 1e-9)
+        XCTAssertEqual(after.wakeEventsCount, 5)
     }
 
     // MARK: - No stale sleep over an empty HEALTH state (coherence)

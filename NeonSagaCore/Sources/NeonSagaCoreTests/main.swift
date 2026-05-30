@@ -924,6 +924,15 @@ group("health-sleep-summary") {
         Sleep.summary(for: sleepSnap(sleepMetrics(deep: 90, rem: 60, light: 240, timeInBed: 0))))
     expect(bedZero.efficiency == nil, "efficiency nil when timeInBed == 0 (treated absent)")
     expect(bedZero.timeInBedMinutes == nil, "timeInBedMinutes nil when 0 (treated absent)")
+    let bedNeg = sleepSummary(
+        Sleep.summary(for: sleepSnap(sleepMetrics(deep: 90, rem: 60, light: 240, timeInBed: -1))))
+    expect(bedNeg.timeInBedMinutes == nil, "timeInBedMinutes nil when negative (treated absent)")
+    expect(bedNeg.efficiency == nil, "efficiency nil when timeInBed negative")
+    let bedInf = sleepSummary(
+        Sleep.summary(
+            for: sleepSnap(sleepMetrics(deep: 90, rem: 60, light: 240, timeInBed: .infinity))))
+    expect(bedInf.timeInBedMinutes == nil, "timeInBedMinutes nil when non-finite (treated absent)")
+    expect(bedInf.efficiency == nil, "efficiency nil when timeInBed non-finite")
     let cap = sleepSummary(
         Sleep.summary(for: sleepSnap(sleepMetrics(deep: 90, rem: 60, light: 240, timeInBed: 300))))
     let capEff = cap.efficiency
@@ -938,6 +947,8 @@ group("health-sleep-summary") {
     let wakeNeg = sleepSummary(
         Sleep.summary(for: sleepSnap(sleepMetrics(deep: 200, wake: -1))))
     expect(wakeNeg.wakeEvents == nil, "negative wakeEvents → nil")
+    let wake0 = sleepSummary(Sleep.summary(for: sleepSnap(sleepMetrics(deep: 200, wake: 0))))
+    expect(wake0.wakeEvents == 0, "wakeEvents == 0 passes through (a perfect night, not nil)")
 
     // SL#8 — non-finite individual stage reads as 0; finite-but-huge sum → noData.
     expect(
@@ -984,6 +995,23 @@ group("health-sleep-summary") {
     expect(base == varyHRV, "Sleep invariant to HRV")
     expect(base == varySleepEff, "Sleep invariant to sleepEfficiency (non-architecture field)")
     expect(base == varyEnergy, "Sleep invariant to workout energy")
+
+    // SL#10 — the noData gate keys ONLY on stage minutes: a snapshot with a non-sleep
+    // field but NO stages → .noData (forbids a fallback onto RHR/HRV/energy, and onto
+    // sleepEfficiency, which is "sleep"-named but is NOT a stage field).
+    expect(
+        Sleep.summary(for: sleepSnap(HealthMetrics(restingHeartRate: 55))) == .noData,
+        "RHR-only (no stages) → .noData")
+    expect(
+        Sleep.summary(for: sleepSnap(HealthMetrics(hrvRMSSD: 60))) == .noData,
+        "HRV-only (no stages) → .noData")
+    expect(
+        Sleep.summary(for: sleepSnap(HealthMetrics(sleepEfficiency: 0.9))) == .noData,
+        "sleepEfficiency-only (no stages) → .noData (not a stage field)")
+    expect(
+        Sleep.summary(for: sleepSnap(HealthMetrics(activeWorkoutEnergyKilocalories: 600)))
+            == .noData,
+        "workout-energy-only (no stages) → .noData")
 }
 
 // MARK: - Summary

@@ -106,7 +106,7 @@ PreToolUse hook); workers cannot trigger reviews (§6, §1.6).
 
 | Entry point | Privilege | Posture |
 |---|---|---|
-| Pre-commit gate: 3 `scripts/precommit/` guard scripts (§3 / §5 / forbidden-paths) + swift-format lint + upstream hygiene hooks | runs on every commit (Claude + Codex + manual) + re-run by CI | KEEP — guards are first-party, in-repo, no external code |
+| Pre-commit gate: 3 `scripts/precommit/` guard scripts (§3 / §5 / forbidden-paths) + swift-format lint + the upstream `pre-commit-hooks` repo | runs on every commit (Claude + Codex + manual) + re-run by CI | KEEP — the guard scripts are first-party / in-repo (no external code); swift-format is platform toolchain and `pre-commit-hooks` is external, pinned per D4 |
 | `github` MCP | write-capable (merge / push / create / delete) | RESTRICT by R1 — read + PR-open only; never merge / push-main / delete |
 | `codex` plugin / `codex:codex-rescue` | executes in a **read-only sandbox** (global `~/.claude/CLAUDE.md`) | KEEP — the sandbox is the control |
 | `block-no-verify` (npx, user-global PreToolUse) | inspects/blocks tool calls | KEEP — pin (D4) |
@@ -262,6 +262,14 @@ this PR; this ADR fixes the posture.
   land); (6) numbering 004 confirmed defensible (no committed forward-reference);
   (7) this Review section filled so the `accepted` status carries no placeholder
   fields.
+- Codex review round 2 (Skill, resumed): **APPROVE WITH CHANGES** — all seven
+  round-1 fixes confirmed resolved; one NEW IMPORTANT introduced by the round-1
+  guard-count edit: the D3 row had folded the external upstream `pre-commit-hooks`
+  into a posture cell claiming "no external code." Fixed: the D3 posture now
+  distinguishes the first-party guard scripts (in-repo) from swift-format (platform
+  toolchain) and `pre-commit-hooks` (external, pinned per D4). Round 3 on this
+  single self-contained cell reword (Codex's own prescribed fix) not warranted —
+  per the §10 R3 review-budget rule, do not grind a trivial confirm.
 - Gemini review: owner-triggered `/gemini review` on the PR.
 - Lead approval: 2026-05-30.
 - Owner: ratifies this ADR by merging the PR; per the locked cadence the owner runs

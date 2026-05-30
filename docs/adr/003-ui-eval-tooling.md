@@ -38,10 +38,10 @@ hit and caught **by hand, not by a test**:
   + `.onAppear` single-construction. **No test in the suite would catch a regression
   of that fix** — a VM unit test passes identically whether the view constructs the
   VM once or on every render.
-- §1.7 (wiring completeness) already requires "all shipped tabs reachable from
-  `RootTab.allCases` / `RootView`" and "no dead routes", but there is **no automated
-  check** that the app launches, tabs are reachable, and each surface renders without
-  crashing. §1.4's Stage-4 exit ritual already **mandates a 5-tab happy-path smoke
+- §1.7 (wiring completeness) already mandates the relevant reachability checks, but
+  they are **review-time only** — nothing executes them to confirm the app launches,
+  the shipped routes resolve, and each surface renders without crashing. §1.4's
+  Stage-4 exit ritual already **mandates a 5-tab happy-path smoke
   flow** (CLAUDE.md §1.4 defines the exact step sequence) — with **no tooling
   specified to run it**.
 
@@ -219,17 +219,22 @@ through**. Not adopted pre-emptively — an unused dependency is net-negative.
 
 ## Review
 
-- Codex review round 1 (`Skill(codex:rescue)`, fresh): **APPROVE WITH CHANGES**
-  (0 BLOCKING / 5 IMPORTANT / 2 NIT). All applied in a fix commit on this branch:
-  (1) replaced the §1.4 5-tab-flow paraphrase in Context with a bare `CLAUDE.md §1.4`
-  citation (dropped action verbs were drift); (2) qualified bare `§4` / `§9` as
-  `CLAUDE.md §4` / `§9`; (3) reworded Layer-0 skill codification as a deferred
-  follow-on step (this ADR is the checklist's authoritative home until the skill
-  mirrors it) — the diff touches only this ADR + `CLAUDE.md`; (4) scoped the S10
-  CONTRACT to an initial smoke and moved the full §1.4 5-tab runner to the Stage-4
-  CONTRACT (all five tabs exist only at Stage 4); (5) rescoped the Layer-0
-  `@Environment` item to store/VM construction (ordinary descendant reads are fine).
-  NIT 6 (numbering) and item 7 (template conformance) confirmed clean.
+- Codex review round 1 (`Skill(codex:rescue)`, fresh): **APPROVE WITH CHANGES** —
+  5 IMPORTANT (findings 1, 3, 4, 5, 7) + 2 NIT (2, 6). Applied: (1) replaced the §1.4
+  5-tab-flow paraphrase in Context with a `CLAUDE.md §1.4` citation (dropped action
+  verbs were drift); (2) qualified bare `§4` / `§9` as `CLAUDE.md §4` / `§9`; (3)
+  reworded Layer-0 skill codification as a deferred follow-on (this ADR is the
+  checklist's home until the skill mirrors it; the diff touches only this ADR +
+  `CLAUDE.md`); (4) scoped the S10 CONTRACT to an initial smoke, moving the full §1.4
+  5-tab runner to the Stage-4 CONTRACT (all five tabs exist only at Stage 4); (5)
+  rescoped the Layer-0 `@Environment` item to store/VM construction; (7) flipped
+  Status `proposed` → `accepted` for a durable committed state. Finding 6 (ADR-003
+  numbering) needed no change.
+- Codex review round 2 (`Skill(codex:rescue)`, resumed): confirmed findings 2–5
+  resolved; reopened two residuals — a remaining inline §1.7 quote in Context (finding
+  1) and a Status-vs-Review contradiction (finding 7). Both fixed: Context now
+  references §1.7 without quoting its checklist items; the Review owner line no longer
+  hedges against the `accepted` status.
 - Lead approval: 2026-05-30.
-- Owner approval: pending — PR open; owner merge finalizes acceptance, after which the
-  owner triggers `/gemini review`.
+- Owner: ratifies this ADR by merging the PR; per the locked cadence the owner runs
+  `/gemini review` before merging.

@@ -237,8 +237,9 @@ through**. Not adopted pre-emptively — an unused dependency is net-negative.
 - Codex review round 3 (`Skill(codex:rescue)`, resumed): **APPROVE** — both residuals
   resolved, no new issues.
 - Gemini review (owner-triggered, PR #16): 4 MEDIUM, all the same class — leaked
-  `[[...]]` memory wikilinks (private agent-memory cross-links that do not resolve in
-  the repo) left in the prose. All four removed and rephrased as plain rationale; the
+  double-bracketed memory wikilinks (private agent-memory cross-links that do not
+  resolve in the repo) left in the prose. All four removed and rephrased as plain
+  rationale; the
   underlying principles (cite-don't-restate, don't-one-shot-infra) are kept inline.
   Codex's three rounds had not flagged these.
 - Lead approval: 2026-05-30.

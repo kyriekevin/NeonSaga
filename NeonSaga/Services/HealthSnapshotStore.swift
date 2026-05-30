@@ -81,6 +81,11 @@ import SwiftData
             rec.hrvRMSSD = metrics.hrvRMSSD
             rec.sleepEfficiency = metrics.sleepEfficiency
             rec.activeWorkoutEnergyKilocalories = metrics.activeWorkoutEnergyKilocalories
+            rec.deepSleepMinutes = metrics.deepSleepMinutes
+            rec.remSleepMinutes = metrics.remSleepMinutes
+            rec.lightSleepMinutes = metrics.lightSleepMinutes
+            rec.timeInBedMinutes = metrics.timeInBedMinutes
+            rec.wakeEventsCount = metrics.wakeEventsCount
             affected = rec
         } else {
             // Insert a fresh record; accumulated values set in step 5.

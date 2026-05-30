@@ -837,6 +837,183 @@ group("strain-score") {
         "Strain invariant to presence of RHR/HRV/sleep (energy-only == fully-populated)")
 }
 
+// MARK: - Stage 1 · Slice 8 — Sleep architecture (RED)
+//
+// `Sleep.summary` reduces a HealthSnapshot's raw sleep-stage signals to a
+// `SleepResult` (.noData / .scored(SleepSummary)) — Deep / REM / Light minutes,
+// asleep total, per-stage fractions, time-in-bed efficiency, wake events. Reads
+// ONLY the five sleep fields (never RHR/HRV/sleepEfficiency/energy). S8 CONTRACT.
+
+private func sleepSnap(_ metrics: HealthMetrics) -> HealthSnapshot {
+    HealthSnapshot(capturedAt: s2Epoch, metrics: metrics)
+}
+
+@MainActor
+private func sleepSummary(_ result: SleepResult) -> SleepSummary {
+    if case .scored(let s) = result { return s }
+    expect(false, "expected .scored, got .noData")
+    exit(1)  // `expect(false,…)` already exits; this satisfies the Never return.
+}
+
+/// Stage minutes only (the four non-sleep fields left nil), so a scored result
+/// proves `Sleep.summary` read the stage fields and nothing else.
+private func sleepMetrics(
+    deep: Double? = nil, rem: Double? = nil, light: Double? = nil,
+    timeInBed: Double? = nil, wake: Int? = nil
+) -> HealthMetrics {
+    HealthMetrics(
+        deepSleepMinutes: deep, remSleepMinutes: rem, lightSleepMinutes: light,
+        timeInBedMinutes: timeInBed, wakeEventsCount: wake)
+}
+
+group("health-sleep-summary") {
+    // SL#1 — SleepResult is Equatable; scored ≠ noData; identical inputs compare equal.
+    expect(SleepResult.noData == .noData, "SleepResult.noData Equatable")
+    let scoredA = Sleep.summary(for: sleepSnap(sleepMetrics(deep: 90, rem: 60, light: 240)))
+    let scoredB = Sleep.summary(for: sleepSnap(sleepMetrics(deep: 90, rem: 60, light: 240)))
+    expect(scoredA == scoredB, "identical stage inputs → equal SleepResult")
+    expect(scoredA != .noData, "scored ≠ noData")
+
+    // SL#2 — noData gate: all stages absent / zero / negative → asleep 0 → noData.
+    expect(
+        Sleep.summary(for: sleepSnap(HealthMetrics())) == .noData,
+        "no sleep fields → .noData")
+    expect(
+        Sleep.summary(for: sleepSnap(sleepMetrics(deep: 0, rem: 0, light: 0))) == .noData,
+        "all-zero stages → .noData")
+    expect(
+        Sleep.summary(for: sleepSnap(sleepMetrics(deep: -10, rem: -5, light: -20))) == .noData,
+        "all-negative stages (clamped to 0) → .noData")
+
+    // SL#3 — scored: stage minutes pass through; asleep == deep + rem + light.
+    let s = sleepSummary(Sleep.summary(for: sleepSnap(sleepMetrics(deep: 90, rem: 60, light: 240))))
+    expect(s.deepMinutes == 90, "deepMinutes passes through")
+    expect(s.remMinutes == 60, "remMinutes passes through")
+    expect(s.lightMinutes == 240, "lightMinutes passes through")
+    expect(abs(s.asleepMinutes - 390) < 1e-9, "asleepMinutes == deep + rem + light")
+
+    // SL#4 — fractions == stage / asleep, and the three sum to 1.
+    expect(abs(s.deepFraction - 90.0 / 390.0) < 1e-9, "deepFraction == deep / asleep")
+    expect(abs(s.remFraction - 60.0 / 390.0) < 1e-9, "remFraction == rem / asleep")
+    expect(abs(s.lightFraction - 240.0 / 390.0) < 1e-9, "lightFraction == light / asleep")
+    expect(
+        abs((s.deepFraction + s.remFraction + s.lightFraction) - 1.0) < 1e-9,
+        "stage fractions sum to 1")
+
+    // SL#5 — a single nil/negative stage is treated as 0 but the snapshot still scores.
+    let deepOnly = sleepSummary(Sleep.summary(for: sleepSnap(sleepMetrics(deep: 120))))
+    expect(deepOnly.remMinutes == 0 && deepOnly.lightMinutes == 0, "absent stages read as 0")
+    expect(abs(deepOnly.asleepMinutes - 120) < 1e-9, "deep-only asleep == 120")
+    expect(abs(deepOnly.deepFraction - 1.0) < 1e-9, "deep-only deepFraction == 1")
+    let negRem = sleepSummary(
+        Sleep.summary(for: sleepSnap(sleepMetrics(deep: 120, rem: -30, light: 60))))
+    expect(negRem.remMinutes == 0, "negative stage clamped to 0")
+    expect(abs(negRem.asleepMinutes - 180) < 1e-9, "negative-rem asleep == 120 + 60")
+
+    // SL#6 — efficiency == asleep / timeInBed; capped at 1.0; nil when timeInBed absent/0.
+    let withBed = sleepSummary(
+        Sleep.summary(for: sleepSnap(sleepMetrics(deep: 90, rem: 60, light: 240, timeInBed: 420))))
+    expect(withBed.timeInBedMinutes == 420, "timeInBedMinutes passes through when > 0")
+    let eff = withBed.efficiency
+    expect(eff != nil && abs(eff! - 390.0 / 420.0) < 1e-9, "efficiency == asleep / timeInBed")
+    let noBed = sleepSummary(
+        Sleep.summary(for: sleepSnap(sleepMetrics(deep: 90, rem: 60, light: 240))))
+    expect(noBed.efficiency == nil, "efficiency nil when timeInBed absent")
+    expect(noBed.timeInBedMinutes == nil, "timeInBedMinutes nil when absent")
+    let bedZero = sleepSummary(
+        Sleep.summary(for: sleepSnap(sleepMetrics(deep: 90, rem: 60, light: 240, timeInBed: 0))))
+    expect(bedZero.efficiency == nil, "efficiency nil when timeInBed == 0 (treated absent)")
+    expect(bedZero.timeInBedMinutes == nil, "timeInBedMinutes nil when 0 (treated absent)")
+    let bedNeg = sleepSummary(
+        Sleep.summary(for: sleepSnap(sleepMetrics(deep: 90, rem: 60, light: 240, timeInBed: -1))))
+    expect(bedNeg.timeInBedMinutes == nil, "timeInBedMinutes nil when negative (treated absent)")
+    expect(bedNeg.efficiency == nil, "efficiency nil when timeInBed negative")
+    let bedInf = sleepSummary(
+        Sleep.summary(
+            for: sleepSnap(sleepMetrics(deep: 90, rem: 60, light: 240, timeInBed: .infinity))))
+    expect(bedInf.timeInBedMinutes == nil, "timeInBedMinutes nil when non-finite (treated absent)")
+    expect(bedInf.efficiency == nil, "efficiency nil when timeInBed non-finite")
+    let cap = sleepSummary(
+        Sleep.summary(for: sleepSnap(sleepMetrics(deep: 90, rem: 60, light: 240, timeInBed: 300))))
+    let capEff = cap.efficiency
+    expect(capEff != nil && abs(capEff! - 1.0) < 1e-9, "efficiency capped at 1.0 (asleep > inBed)")
+
+    // SL#7 — wakeEvents passes through when present (≥ 0); nil when absent or negative.
+    let wake3 = sleepSummary(
+        Sleep.summary(for: sleepSnap(sleepMetrics(deep: 200, wake: 3))))
+    expect(wake3.wakeEvents == 3, "wakeEvents passes through")
+    let wakeAbsent = sleepSummary(Sleep.summary(for: sleepSnap(sleepMetrics(deep: 200))))
+    expect(wakeAbsent.wakeEvents == nil, "wakeEvents nil when absent")
+    let wakeNeg = sleepSummary(
+        Sleep.summary(for: sleepSnap(sleepMetrics(deep: 200, wake: -1))))
+    expect(wakeNeg.wakeEvents == nil, "negative wakeEvents → nil")
+    let wake0 = sleepSummary(Sleep.summary(for: sleepSnap(sleepMetrics(deep: 200, wake: 0))))
+    expect(wake0.wakeEvents == 0, "wakeEvents == 0 passes through (a perfect night, not nil)")
+
+    // SL#8 — non-finite individual stage reads as 0; finite-but-huge sum → noData.
+    expect(
+        Sleep.summary(for: sleepSnap(sleepMetrics(deep: .infinity, rem: 0, light: 0))) == .noData,
+        "non-finite single stage read as 0 → asleep 0 → .noData")
+    expect(
+        Sleep.summary(for: sleepSnap(sleepMetrics(deep: .nan, rem: 0, light: 0))) == .noData,
+        "NaN single stage read as 0 → asleep 0 → .noData")
+    expect(
+        Sleep.summary(
+            for: sleepSnap(
+                sleepMetrics(deep: .greatestFiniteMagnitude, rem: .greatestFiniteMagnitude)))
+            == .noData,
+        "finite-but-huge stages summing to +inf → .noData (post-sum finite guard)")
+
+    // SL#9 — presence-invariance: hold the 5 sleep fields fixed, vary each non-sleep
+    // field one at a time → identical SleepResult (Sleep.summary reads ONLY sleep fields;
+    // sleepEfficiency is a NON-architecture field and must be ignored too).
+    let baseSleep = HealthMetrics(
+        deepSleepMinutes: 90, remSleepMinutes: 60, lightSleepMinutes: 240,
+        timeInBedMinutes: 420, wakeEventsCount: 3)
+    let base = Sleep.summary(for: sleepSnap(baseSleep))
+    let varyRHR = Sleep.summary(
+        for: sleepSnap(
+            HealthMetrics(
+                restingHeartRate: 40, deepSleepMinutes: 90, remSleepMinutes: 60,
+                lightSleepMinutes: 240, timeInBedMinutes: 420, wakeEventsCount: 3)))
+    let varyHRV = Sleep.summary(
+        for: sleepSnap(
+            HealthMetrics(
+                hrvRMSSD: 90, deepSleepMinutes: 90, remSleepMinutes: 60,
+                lightSleepMinutes: 240, timeInBedMinutes: 420, wakeEventsCount: 3)))
+    let varySleepEff = Sleep.summary(
+        for: sleepSnap(
+            HealthMetrics(
+                sleepEfficiency: 0.95, deepSleepMinutes: 90, remSleepMinutes: 60,
+                lightSleepMinutes: 240, timeInBedMinutes: 420, wakeEventsCount: 3)))
+    let varyEnergy = Sleep.summary(
+        for: sleepSnap(
+            HealthMetrics(
+                activeWorkoutEnergyKilocalories: 600, deepSleepMinutes: 90, remSleepMinutes: 60,
+                lightSleepMinutes: 240, timeInBedMinutes: 420, wakeEventsCount: 3)))
+    expect(base == varyRHR, "Sleep invariant to RHR")
+    expect(base == varyHRV, "Sleep invariant to HRV")
+    expect(base == varySleepEff, "Sleep invariant to sleepEfficiency (non-architecture field)")
+    expect(base == varyEnergy, "Sleep invariant to workout energy")
+
+    // SL#10 — the noData gate keys ONLY on stage minutes: a snapshot with a non-sleep
+    // field but NO stages → .noData (forbids a fallback onto RHR/HRV/energy, and onto
+    // sleepEfficiency, which is "sleep"-named but is NOT a stage field).
+    expect(
+        Sleep.summary(for: sleepSnap(HealthMetrics(restingHeartRate: 55))) == .noData,
+        "RHR-only (no stages) → .noData")
+    expect(
+        Sleep.summary(for: sleepSnap(HealthMetrics(hrvRMSSD: 60))) == .noData,
+        "HRV-only (no stages) → .noData")
+    expect(
+        Sleep.summary(for: sleepSnap(HealthMetrics(sleepEfficiency: 0.9))) == .noData,
+        "sleepEfficiency-only (no stages) → .noData (not a stage field)")
+    expect(
+        Sleep.summary(for: sleepSnap(HealthMetrics(activeWorkoutEnergyKilocalories: 600)))
+            == .noData,
+        "workout-energy-only (no stages) → .noData")
+}
+
 // MARK: - Summary
 //
 // Fail-fast above means reaching here implies every expectation passed.

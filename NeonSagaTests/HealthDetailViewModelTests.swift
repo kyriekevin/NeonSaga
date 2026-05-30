@@ -218,10 +218,12 @@ final class HealthDetailViewModelTests: XCTestCase {
         XCTAssertEqual(vm.subStats.count, 3)
     }
 
+    // S8 replaces the Sleep placeholder with a real `sleep: SleepResult` (see
+    // SleepViewModelTests); `sleepPlaceholder` is removed, so this now only pins the
+    // remaining S9 AI-brief placeholder slot.
     @MainActor
-    func testSleepAndAIBriefPlaceholdersPresent() throws {
+    func testAIBriefPlaceholderPresent() throws {
         let vm = HealthDetailViewModel(store: try makeStore())
-        XCTAssertTrue(vm.sleepPlaceholder.contains("S8"))
         XCTAssertTrue(vm.aiBriefPlaceholder.contains("S9"))
     }
 }

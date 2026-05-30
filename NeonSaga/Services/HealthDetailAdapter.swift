@@ -12,7 +12,12 @@ enum HealthDetailAdapter {
             restingHeartRate: record.restingHeartRate,
             hrvRMSSD: record.hrvRMSSD,
             sleepEfficiency: record.sleepEfficiency,
-            activeWorkoutEnergyKilocalories: record.activeWorkoutEnergyKilocalories
+            activeWorkoutEnergyKilocalories: record.activeWorkoutEnergyKilocalories,
+            deepSleepMinutes: record.deepSleepMinutes,
+            remSleepMinutes: record.remSleepMinutes,
+            lightSleepMinutes: record.lightSleepMinutes,
+            timeInBedMinutes: record.timeInBedMinutes,
+            wakeEventsCount: record.wakeEventsCount
         )
         return HealthSnapshot(capturedAt: record.capturedAt, metrics: metrics)
     }

@@ -43,7 +43,7 @@ private struct HealthDetailContentView: View {
         ScrollView {
             VStack(spacing: 16) {
                 RecoveryCard(viewModel: viewModel)
-                SleepCard(placeholder: viewModel.sleepPlaceholder)
+                SleepCard(viewModel: viewModel)
                 StrainCard(viewModel: viewModel)
                 SubStatsCard(viewModel: viewModel)
             }
@@ -135,10 +135,10 @@ private struct RecoveryRing: View {
     }
 }
 
-// MARK: - Sleep placeholder card
+// MARK: - Sleep architecture card
 
 private struct SleepCard: View {
-    let placeholder: String
+    let viewModel: HealthDetailViewModel
 
     var body: some View {
         VStack(spacing: 8) {
@@ -146,14 +146,115 @@ private struct SleepCard: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.cyan)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(placeholder)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+            switch viewModel.sleep {
+            case .noData:
+                Text("No sleep data")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+            case .scored(let s):
+                SleepScoredBody(summary: s)
+            }
         }
         .padding()
         .background(Color(white: 0.08))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct SleepScoredBody: View {
+    let summary: SleepSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Total asleep
+            Text(sleepDurationText(summary.asleepMinutes))
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.primary)
+
+            // Stage rows
+            SleepStageRow(label: "Deep", minutes: summary.deepMinutes, color: .indigo)
+            SleepStageRow(label: "REM", minutes: summary.remMinutes, color: .purple)
+            SleepStageRow(label: "Light", minutes: summary.lightMinutes, color: .cyan)
+
+            // Proportional stacked bar
+            SleepStackedBar(summary: summary)
+
+            // Time in bed + efficiency (when present)
+            if let bed = summary.timeInBedMinutes {
+                let effText: String = {
+                    if let e = summary.efficiency {
+                        return String(format: " · %.0f%% efficiency", e * 100)
+                    }
+                    return ""
+                }()
+                Text("In bed: \(sleepDurationText(bed))\(effText)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Wake events (when present)
+            if let wake = summary.wakeEvents {
+                Text("Wake events: \(wake)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SleepStageRow: View {
+    let label: String
+    let minutes: Double
+    let color: Color
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(color)
+                .frame(width: 44, alignment: .leading)
+            Text(sleepDurationText(minutes))
+                .font(.caption)
+                .foregroundStyle(.primary)
+            Spacer()
+        }
+    }
+}
+
+/// Formats a minutes duration as "Xh Ym" / "Ym". Guards non-finite / out-of-range
+/// inputs (the Sleep contract permits any finite-positive `Double`, so a pathological
+/// value must not trap `Int(_:)`) by returning an em-dash. Shared by the asleep total,
+/// the per-stage rows, and the in-bed line (Codex 2b finding 1 — DRY + safe cast).
+func sleepDurationText(_ minutes: Double) -> String {
+    guard minutes.isFinite, minutes >= 0, minutes < Double(Int.max) else { return "—" }
+    let total = Int(minutes)
+    let h = total / 60
+    let m = total % 60
+    return h > 0 ? "\(h)h \(m)m" : "\(m)m"
+}
+
+private struct SleepStackedBar: View {
+    let summary: SleepSummary
+
+    var body: some View {
+        GeometryReader { geo in
+            HStack(spacing: 1) {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.indigo)
+                    .frame(width: max(geo.size.width * summary.deepFraction - 1, 0))
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.purple)
+                    .frame(width: max(geo.size.width * summary.remFraction - 1, 0))
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.cyan)
+                    .frame(width: max(geo.size.width * summary.lightFraction - 1, 0))
+            }
+        }
+        .frame(height: 8)
     }
 }
 

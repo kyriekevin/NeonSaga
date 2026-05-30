@@ -31,13 +31,13 @@ You do not design scope, write tests, or trigger reviews.
 8. Commit/push only if the lead told you to; message prefix `green:`; prefer a new
    commit over amending.
 
-## Verify before handing back (§1.9 matrix — pick by scope)
+## Verify before handing back
 
-| What you changed | Command |
-|---|---|
-| Pure logic in `NeonSagaCore` | `make test-core` |
-| `@Model` / SwiftUI | `make test` |
-| Anything crossing core ↔ app | `make verify-full` |
+Pick the command from **`CLAUDE.md` §1.9** (the authoritative verification matrix)
+for what you changed. Common worker cases: pure `NeonSagaCore` logic →
+`make test-core`; `@Model` / SwiftUI → `make test`; anything crossing core ↔ app →
+`make verify-full`. **If your change doesn't match one of those rows, stop and ask
+the lead, or follow the exact §1.9 row — don't guess.**
 
 - The authoritative gate is `make hooks` / `make verify` — **not** a hand-built
   file list. `swift format lint` without `--strict` only warns (false green).

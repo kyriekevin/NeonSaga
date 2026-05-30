@@ -18,12 +18,11 @@ Every production slice runs the full §6 pipeline and **STOPS for owner merge**
 pipeline ONLY for changes < ~30 LOC with no architectural decision (typos,
 mechanical renames, dead-code removal).
 
-**Scope of "production":** touches `NeonSagaCore/Sources/` or `NeonSaga/`. Those
-get red:/green: commit discipline (§1.2). Docs (`*.md`), pure config
-(`project.yml`, `Makefile`, `Package.swift`), assets, **skills/agents/hooks
-infra**, and ADRs are exempt from red:/green: — but substantive ones (> ~30 lines
-or spec-adjacent) STILL get a Codex review before PR (a docs PR once self-skipped
-review and Codex caught a real factual error).
+**Red/green applicability is exactly `CLAUDE.md` §1.2** (production = touches
+`NeonSagaCore/Sources/` or `NeonSaga/`; note **bugfixes are NEVER exempt** — write
+the reproducing test first). Non-production docs/config/infra changes that are
+**substantive or spec-adjacent STILL get a Codex review before PR** (a docs PR
+once self-skipped review and Codex caught a real factual error).
 
 ## Roles & models (§6)
 
@@ -33,7 +32,7 @@ review and Codex caught a real factual error).
   in an isolated worktree. **Workers may NOT trigger Codex/Gemini reviews** — only
   lead or owner does.
 - **Reviewers:** Codex (contract / tests / diff, via `Skill(codex:rescue)`),
-  Gemini (auto on PR, owner triggers `/gemini review`).
+  Gemini (**owner-triggered** `/gemini review` after the PR — NOT automatic).
 
 ## Phases (run in order; each gate must pass before the next)
 
@@ -72,8 +71,10 @@ review and Codex caught a real factual error).
     (prefer new over amend). Re-run the relevant `make` gate after each fix.
 
 ### 3 — verify + PR
-11. Run the verification matrix row for the change scope (§1.9) — when it crosses
-    the core↔app boundary, `make verify-full`. Report the pass/fail summary line.
+11. **Phase-3 gate is `make verify-full`** (§6) — the full integration gate, not a
+    scoped row. (§1.9's scoped rows are for INTERIM worker / fix-iteration checks;
+    §6 Phase 3 is the pre-PR gate.) If the PR is also a **stage exit**, add the
+    §1.4 device-install ritual. Report the pass/fail summary line.
 12. Push the feature branch (never `main`). Open the PR with a scoped body. **STOP
     for owner merge.**
 

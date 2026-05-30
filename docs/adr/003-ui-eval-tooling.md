@@ -95,7 +95,7 @@ Layer 0 is the cheapest layer and catches the bug we have actually seen. Until t
 `slice-pipeline` skill (CLAUDE.md §9) mirrors it (a follow-on Layer-0 implementation
 step — see Implementation, **not in this PR**), **this ADR is the checklist's
 authoritative home**; the skill sub-checklist will then **cite** this ADR and the
-§-numbers above rather than restate them (per [[feedback-spec-reference-dont-restate]]).
+§-numbers above rather than restate them (cite the spec, don't fork it).
 
 ### Layer 1 — Simulator smoke (XCUITest + `ios-simulator-skill`)
 
@@ -142,7 +142,7 @@ through**. Not adopted pre-emptively — an unused dependency is net-negative.
   and the §1.4 Stage-4 5-tab smoke flow.
 - Avoids brittle pixel gates; preserves the fast solo cadence.
 - Defers all dependency/tooling cost to the slice that proves each layer is needed
-  (don't one-shot infra — [[feedback-per-pr-retrospective]]).
+  (don't one-shot infra — build each layer only when it earns its place).
 
 ### Negative
 
@@ -176,9 +176,8 @@ through**. Not adopted pre-emptively — an unused dependency is net-negative.
   to view↔VM ownership/lifecycle — they pass identically whether the view constructs
   the VM once or on every render (the exact bug `HealthDetailContainerView` works
   around by hand).
-- **A single big "UI testing" adoption now.** Rejected: one-shotting infra contradicts
-  [[feedback-per-pr-retrospective]]; the ladder lets each layer earn its place from
-  lived slice experience.
+- **A single big "UI testing" adoption now.** Rejected: one-shotting infra is wasteful;
+  the ladder lets each layer earn its place from lived slice experience.
 
 ## ROADMAP impact
 
@@ -192,7 +191,7 @@ through**. Not adopted pre-emptively — an unused dependency is net-negative.
     add/change → Layer-0 lifecycle review checklist (ADR-003) + `make test`"; (b)
     "Multi-surface navigation / stage-exit smoke → Layer-1 simulator smoke (XCUITest +
     `ios-simulator-skill`), per ADR-003." The rows **reference** ADR-003 for the
-    checklist; they do not inline it (per [[feedback-spec-reference-dont-restate]]).
+    checklist; they do not inline it (one source of truth — the checklist lives here).
   - `CLAUDE.md` §1.4: a one-line pointer that the Stage-4 5-tab smoke flow is run via
     the Layer-1 tooling (ADR-003). The flow definition itself is unchanged.
   - No change to §1.7 wording (Layer 0 references it; the wiring checklist stands).
@@ -237,6 +236,11 @@ through**. Not adopted pre-emptively — an unused dependency is net-negative.
   hedges against the `accepted` status.
 - Codex review round 3 (`Skill(codex:rescue)`, resumed): **APPROVE** — both residuals
   resolved, no new issues.
+- Gemini review (owner-triggered, PR #16): 4 MEDIUM, all the same class — leaked
+  `[[...]]` memory wikilinks (private agent-memory cross-links that do not resolve in
+  the repo) left in the prose. All four removed and rephrased as plain rationale; the
+  underlying principles (cite-don't-restate, don't-one-shot-infra) are kept inline.
+  Codex's three rounds had not flagged these.
 - Lead approval: 2026-05-30.
 - Owner: ratifies this ADR by merging the PR; per the locked cadence the owner runs
   `/gemini review` before merging.

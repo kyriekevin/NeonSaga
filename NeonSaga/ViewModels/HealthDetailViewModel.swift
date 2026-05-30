@@ -42,6 +42,15 @@ struct SubStatRow: Identifiable {
     var healthLevel: Int? = nil
     var hasData: Bool = false
 
+    /// FIFO queue of level-up crossings waiting to be presented.
+    var levelUpQueue: [SubStatLevelCrossing] = []
+
+    /// The crossing currently being shown (head of the queue), or `nil` when idle.
+    var currentLevelUp: SubStatLevelCrossing? { levelUpQueue.first }
+
+    /// Previously displayed sub-stat values, used as a diff baseline by `compute()`.
+    private var lastSubStatValues: (hunger: Double, fatigue: Double, strength: Double)?
+
     /// Placeholder slot label for the Sleep card (S8 deliverable).
     let sleepPlaceholder: String = "Sleep architecture — arrives in S8"
 
@@ -78,6 +87,11 @@ struct SubStatRow: Identifiable {
         compute()
     }
 
+    /// Removes the head of the level-up queue, advancing to the next crossing (if any).
+    func dismissCurrentLevelUp() {
+        if !levelUpQueue.isEmpty { levelUpQueue.removeFirst() }
+    }
+
     // MARK: - Private compute
 
     private func compute() {
@@ -88,6 +102,7 @@ struct SubStatRow: Identifiable {
             healthValue = nil
             healthLevel = nil
             hasData = false
+            lastSubStatValues = nil
             return
         }
 
@@ -99,6 +114,13 @@ struct SubStatRow: Identifiable {
         let h = latest.hungerValue
         let f = latest.fatigueValue
         let s = latest.strengthValue
+
+        if let last = lastSubStatValues {
+            let crossings = LevelUp.detectCrossings(
+                from: last, to: (hunger: h, fatigue: f, strength: s))
+            levelUpQueue.append(contentsOf: crossings)
+        }
+        lastSubStatValues = (hunger: h, fatigue: f, strength: s)
 
         subStats = [
             SubStatRow(substat: .hunger, value: h, level: Level.of(h)),

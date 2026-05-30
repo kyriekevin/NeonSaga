@@ -22,3 +22,36 @@ public enum LevelUp {
         return LevelCrossing(oldLevel: oldLv, newLevel: newLv)
     }
 }
+
+/// A level-up crossing on a specific HEALTH sub-stat.
+public struct SubStatLevelCrossing: Equatable {
+    public let substat: SubStat
+    public let crossing: LevelCrossing
+
+    public init(substat: SubStat, crossing: LevelCrossing) {
+        self.substat = substat
+        self.crossing = crossing
+    }
+}
+
+extension LevelUp {
+    /// One crossing per HEALTH sub-stat whose LV strictly increased old -> new, in the
+    /// fixed order hunger -> fatigue -> strength. Non-crossings omitted; delegates per
+    /// sub-stat to `LevelUp.detect`.
+    public static func detectCrossings(
+        from old: (hunger: Double, fatigue: Double, strength: Double),
+        to new: (hunger: Double, fatigue: Double, strength: Double)
+    ) -> [SubStatLevelCrossing] {
+        var out: [SubStatLevelCrossing] = []
+        if let c = detect(from: old.hunger, to: new.hunger) {
+            out.append(SubStatLevelCrossing(substat: .hunger, crossing: c))
+        }
+        if let c = detect(from: old.fatigue, to: new.fatigue) {
+            out.append(SubStatLevelCrossing(substat: .fatigue, crossing: c))
+        }
+        if let c = detect(from: old.strength, to: new.strength) {
+            out.append(SubStatLevelCrossing(substat: .strength, crossing: c))
+        }
+        return out
+    }
+}

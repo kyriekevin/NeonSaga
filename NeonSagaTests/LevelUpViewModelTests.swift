@@ -34,6 +34,10 @@ final class LevelUpViewModelTests: XCTestCase {
                 hunger: hunger, fatigue: fatigue, strength: strength))
     }
 
+    private func xing(_ s: SubStat, _ old: Int, _ new: Int) -> SubStatLevelCrossing {
+        SubStatLevelCrossing(substat: s, crossing: LevelCrossing(oldLevel: old, newLevel: new))
+    }
+
     // MARK: - Init / first load is silent (required behavior 3)
 
     @MainActor
@@ -50,6 +54,24 @@ final class LevelUpViewModelTests: XCTestCase {
     @MainActor
     func testNoDataInitLeavesQueueEmpty() throws {
         let vm = HealthDetailViewModel(store: try makeStore())
+
+        XCTAssertTrue(vm.levelUpQueue.isEmpty)
+        XCTAssertNil(vm.currentLevelUp)
+    }
+
+    @MainActor
+    func testInitWithPriorHistoryStaysSilent() throws {
+        let store = try makeStore()
+        // Two records ALREADY persisted before the VM exists: an older (10,10,10) and a
+        // newer (30,10,30) that WOULD be a crossing if detection diffed store history.
+        // The detection seam is the VM's previously-DISPLAYED values (nil at init), so
+        // init must stay silent — it must NOT compare latest vs. second-latest in the
+        // store (Codex tests-review item 5).
+        try seed(store, at: base, hunger: 10, fatigue: 10, strength: 10)
+        try seed(
+            store, at: base.addingTimeInterval(60), hunger: 30, fatigue: 10, strength: 30)
+
+        let vm = HealthDetailViewModel(store: store)
 
         XCTAssertTrue(vm.levelUpQueue.isEmpty)
         XCTAssertNil(vm.currentLevelUp)
@@ -102,10 +124,13 @@ final class LevelUpViewModelTests: XCTestCase {
             store, at: base.addingTimeInterval(60), hunger: 30, fatigue: 10, strength: 30)
         vm.refresh()
 
+        // Assert the full SubStatLevelCrossing payloads (substat + old/new LV), not just
+        // the substat — a wrong impl could enqueue the right substats with wrong levels
+        // (Codex tests-review item 4).
         XCTAssertEqual(vm.levelUpQueue.count, 2)
-        XCTAssertEqual(vm.currentLevelUp?.substat, .hunger)
+        XCTAssertEqual(vm.currentLevelUp, xing(.hunger, 10, 30))
         vm.dismissCurrentLevelUp()
-        XCTAssertEqual(vm.currentLevelUp?.substat, .strength)
+        XCTAssertEqual(vm.currentLevelUp, xing(.strength, 10, 30))
         vm.dismissCurrentLevelUp()
         XCTAssertNil(vm.currentLevelUp)
         XCTAssertTrue(vm.levelUpQueue.isEmpty)

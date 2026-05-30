@@ -235,6 +235,8 @@ through**. Not adopted pre-emptively — an unused dependency is net-negative.
   1) and a Status-vs-Review contradiction (finding 7). Both fixed: Context now
   references §1.7 without quoting its checklist items; the Review owner line no longer
   hedges against the `accepted` status.
+- Codex review round 3 (`Skill(codex:rescue)`, resumed): **APPROVE** — both residuals
+  resolved, no new issues.
 - Lead approval: 2026-05-30.
 - Owner: ratifies this ADR by merging the PR; per the locked cadence the owner runs
   `/gemini review` before merging.

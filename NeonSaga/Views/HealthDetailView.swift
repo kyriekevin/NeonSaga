@@ -167,17 +167,10 @@ private struct SleepCard: View {
 private struct SleepScoredBody: View {
     let summary: SleepSummary
 
-    private func formatMinutes(_ total: Double) -> String {
-        let h = Int(total) / 60
-        let m = Int(total) % 60
-        if h > 0 { return "\(h)h \(m)m" }
-        return "\(m)m"
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Total asleep
-            Text(formatMinutes(summary.asleepMinutes))
+            Text(sleepDurationText(summary.asleepMinutes))
                 .font(.title2.weight(.bold))
                 .foregroundStyle(.primary)
 
@@ -197,7 +190,7 @@ private struct SleepScoredBody: View {
                     }
                     return ""
                 }()
-                Text("In bed: \(formatMinutes(bed))\(effText)")
+                Text("In bed: \(sleepDurationText(bed))\(effText)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -224,19 +217,24 @@ private struct SleepStageRow: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(color)
                 .frame(width: 44, alignment: .leading)
-            Text(minutesText(minutes))
+            Text(sleepDurationText(minutes))
                 .font(.caption)
                 .foregroundStyle(.primary)
             Spacer()
         }
     }
+}
 
-    private func minutesText(_ m: Double) -> String {
-        let h = Int(m) / 60
-        let mins = Int(m) % 60
-        if h > 0 { return "\(h)h \(mins)m" }
-        return "\(mins)m"
-    }
+/// Formats a minutes duration as "Xh Ym" / "Ym". Guards non-finite / out-of-range
+/// inputs (the Sleep contract permits any finite-positive `Double`, so a pathological
+/// value must not trap `Int(_:)`) by returning an em-dash. Shared by the asleep total,
+/// the per-stage rows, and the in-bed line (Codex 2b finding 1 — DRY + safe cast).
+func sleepDurationText(_ minutes: Double) -> String {
+    guard minutes.isFinite, minutes >= 0, minutes < Double(Int.max) else { return "—" }
+    let total = Int(minutes)
+    let h = total / 60
+    let m = total % 60
+    return h > 0 ? "\(h)h \(m)m" : "\(m)m"
 }
 
 private struct SleepStackedBar: View {

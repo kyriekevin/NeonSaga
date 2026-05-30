@@ -76,8 +76,9 @@ lifecycle items those sections do not carry:
   `@State` + `.onAppear` when `init` does I/O (the `HealthDetailContainerView`
   pattern), or a plain `@State` of the `@Observable` VM owned at the right level (the
   SwiftUI-Observation idiom; `@StateObject` is the `ObservableObject` equivalent).
-  **Never** `State(initialValue: VM(...))` when `init` does work — it re-runs every
-  body pass.
+  **Never** `State(initialValue: VM(...))` when `init` does work — it re-runs on every
+  parent body pass (each time this view is re-initialized; SwiftUI then discards the
+  recomputed value but the work has already run).
 - [ ] View-model state **survives parent re-render** (owned by `@State`/`@StateObject`
   at the right level, not re-created inside `body`).
 - [ ] An `@Environment` value used to **construct** a store or view model (e.g.
@@ -236,12 +237,17 @@ through**. Not adopted pre-emptively — an unused dependency is net-negative.
   hedges against the `accepted` status.
 - Codex review round 3 (`Skill(codex:rescue)`, resumed): **APPROVE** — both residuals
   resolved, no new issues.
-- Gemini review (owner-triggered, PR #16): 4 MEDIUM, all the same class — leaked
-  double-bracketed memory wikilinks (private agent-memory cross-links that do not
-  resolve in the repo) left in the prose. All four removed and rephrased as plain
-  rationale; the
-  underlying principles (cite-don't-restate, don't-one-shot-infra) are kept inline.
-  Codex's three rounds had not flagged these.
+- Gemini review round 1 (owner-triggered, PR #16): 4 MEDIUM, all the same class —
+  leaked double-bracketed memory wikilinks (private agent-memory cross-links that do
+  not resolve in the repo) left in the prose. All four removed and rephrased as plain
+  rationale; the underlying principles (cite-don't-restate, don't-one-shot-infra) are
+  kept inline. Codex's three rounds had not flagged these.
+- Gemini review round 2 (owner-triggered, PR #16): 1 MEDIUM — the Layer-0 checklist
+  said `State(initialValue:)` re-runs "every body pass"; corrected to "every parent
+  body pass (view re-initialization)" for precision and consistency with the Context
+  paragraph. Verified against SwiftUI semantics (the init expression re-evaluates on
+  view re-construction, driven by the parent's body pass; a view's own body does not
+  re-run its init). Legit, applied.
 - Lead approval: 2026-05-30.
 - Owner: ratifies this ADR by merging the PR; per the locked cadence the owner runs
   `/gemini review` before merging.

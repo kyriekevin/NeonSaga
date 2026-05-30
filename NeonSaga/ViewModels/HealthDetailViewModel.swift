@@ -102,6 +102,9 @@ struct SubStatRow: Identifiable {
             healthValue = nil
             healthLevel = nil
             hasData = false
+            // Clear BOTH the diff baseline and any pending takeover: a "LEVEL UP" must not
+            // linger over an empty HEALTH state (Gemini PR#18 HIGH).
+            levelUpQueue.removeAll()
             lastSubStatValues = nil
             return
         }

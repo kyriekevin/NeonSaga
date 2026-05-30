@@ -172,4 +172,40 @@ final class LevelUpViewModelTests: XCTestCase {
         XCTAssertTrue(vm.levelUpQueue.isEmpty)
         XCTAssertNil(vm.currentLevelUp)
     }
+
+    // MARK: - No-data clears a PENDING queue (Gemini PR#18 HIGH)
+
+    @MainActor
+    func testNoDataClearsPendingQueue() throws {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: HealthSnapshotRecord.self, configurations: config)
+        let context = ModelContext(container)
+        let store = HealthSnapshotStore(context: context)
+
+        let recordA = HealthSnapshotRecord(
+            capturedAt: base, metrics: HealthMetrics(),
+            hunger: 10, fatigue: 10, strength: 10)
+        context.insert(recordA)
+        try context.save()
+        let vm = HealthDetailViewModel(store: store)  // baseline (10,10,10), silent
+
+        // A higher record enqueues a crossing.
+        let recordB = HealthSnapshotRecord(
+            capturedAt: base.addingTimeInterval(60), metrics: HealthMetrics(),
+            hunger: 30, fatigue: 30, strength: 30)
+        context.insert(recordB)
+        try context.save()
+        vm.refresh()
+        XCTAssertFalse(vm.levelUpQueue.isEmpty)
+
+        // Data disappears → the no-data branch must clear the pending queue, so no stale
+        // "LEVEL UP" lingers over the empty HEALTH state (Gemini PR#18 HIGH).
+        context.delete(recordA)
+        context.delete(recordB)
+        try context.save()
+        vm.refresh()
+
+        XCTAssertTrue(vm.levelUpQueue.isEmpty)
+        XCTAssertNil(vm.currentLevelUp)
+    }
 }

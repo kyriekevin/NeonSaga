@@ -25,10 +25,19 @@ struct LevelUpTakeoverView: View {
             // scale/opacity intro AND the success haptic re-fire per crossing (the
             // baseline update in the VM makes identical consecutive crossings unreachable,
             // so the crossing value alone is a sufficient id — Codex diff-review item 3).
-            TakeoverCard(crossing: crossing, onDismiss: { viewModel.dismissCurrentLevelUp() })
-                .id(crossing)
-                .transition(.opacity)
-                .animation(.easeInOut(duration: 0.3), value: crossing)
+            // Wrap the dismissal mutation in `withAnimation` so the `.id(crossing)` identity
+            // change drives the `.transition(.opacity)` removal/advance fade — an implicit
+            // `.animation(value:)` cannot animate the card's own teardown (Gemini PR#18 MEDIUM).
+            // Appearance (incl. re-appear per crossing) is animated by the card's internal
+            // `visible` flip, so no outer `.animation(value:)` is needed.
+            TakeoverCard(
+                crossing: crossing,
+                onDismiss: {
+                    withAnimation(.easeInOut(duration: 0.3)) { viewModel.dismissCurrentLevelUp() }
+                }
+            )
+            .id(crossing)
+            .transition(.opacity)
         }
     }
 }

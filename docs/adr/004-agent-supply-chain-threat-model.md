@@ -270,7 +270,10 @@ this PR; this ADR fixes the posture.
   toolchain) and `pre-commit-hooks` (external, pinned per D4). Round 3 on this
   single self-contained cell reword (Codex's own prescribed fix) not warranted —
   per the §10 R3 review-budget rule, do not grind a trivial confirm.
-- Gemini review: owner-triggered `/gemini review` on the PR.
+- Gemini review round 1 (PR #17): 1 MEDIUM (consistency) — the D4 follow-on bullet
+  wrote bare `ci.yml` while the Context and D4 references used the full path.
+  Verified (only one of the three `ci.yml` references was bare) and applied:
+  normalized to `.github/workflows/ci.yml`.
 - Lead approval: 2026-05-30.
 - Owner: ratifies this ADR by merging the PR; per the locked cadence the owner runs
   `/gemini review` before merging.

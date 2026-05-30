@@ -37,6 +37,7 @@ struct SubStatRow: Identifiable {
 
     var recovery: RecoveryResult = .calibrating(daysOfData: 0)
     var strain: StrainResult = .noData
+    var sleep: SleepResult = .noData
     var subStats: [SubStatRow] = []
     var healthValue: Double? = nil
     var healthLevel: Int? = nil
@@ -50,9 +51,6 @@ struct SubStatRow: Identifiable {
 
     /// Previously displayed sub-stat values, used as a diff baseline by `compute()`.
     private var lastSubStatValues: (hunger: Double, fatigue: Double, strength: Double)?
-
-    /// Placeholder slot label for the Sleep card (S8 deliverable).
-    let sleepPlaceholder: String = "Sleep architecture — arrives in S8"
 
     /// Placeholder slot label for the AI-brief sub-slot in the Recovery card (S9).
     let aiBriefPlaceholder: String = "AI brief — arrives in S9"
@@ -98,6 +96,7 @@ struct SubStatRow: Identifiable {
         guard let latest = try? store.latest() else {
             recovery = .calibrating(daysOfData: 0)
             strain = .noData
+            sleep = .noData
             subStats = []
             healthValue = nil
             healthLevel = nil
@@ -113,6 +112,7 @@ struct SubStatRow: Identifiable {
         let baseline = (try? store.recentHRVBaseline(before: latest.capturedAt)) ?? []
         recovery = Recovery.score(for: snapshot, hrvBaseline: baseline)
         strain = Strain.score(for: snapshot)
+        sleep = Sleep.summary(for: snapshot)
 
         let h = latest.hungerValue
         let f = latest.fatigueValue

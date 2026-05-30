@@ -338,9 +338,16 @@ requires it.
 The following skills are mandatory once their domain enters scope (typically
 during Stage 1):
 
+- `slice-pipeline` — the executable runbook for the §6 phased pipeline (CONTRACT
+  → reviews → red/green → verify → PR → retro). Use it whenever running a slice
+  or opening a PR.
 - `tdd` — enforces red/green/refactor on every change (§1.2)
 - `swiftui-pro`, `swiftui-design-principles`, `swiftui-ui-patterns`,
   `swiftui-view-refactor` — for SwiftUI work
 - `swiftdata-pro` — for `@Model` work
 - `swift-concurrency-pro` — for async/await review
 - `ios-simulator-skill` — for iOS automation and screenshots
+
+Project subagents live in `.claude/agents/`: `neonsaga-green-worker` (Sonnet)
+carries the standing GREEN-phase worker context so phase-2 dispatch needs only
+the per-slice delta.
